@@ -6,8 +6,23 @@ operational persona. It generates a persona-specific Docker Compose manifest,
 sets explicit hostnames and container names, updates environment values, and
 can inject banner and content files into running honeypot containers.
 
-The main goal is to let an operator land on a T-Pot host, run one command, and
-be guided through selecting and deploying a believable footprint.
+The goal is simple: land on a T-Pot host, run one command, choose a persona,
+and deploy a more believable deception footprint without hand-editing Compose
+files, environment variables, and banner assets by hand.
+
+## Why Use DeepPrint With T-Pot
+
+T-Pot gives you a powerful honeypot platform, but a default deployment can
+still look generic. DeepPrint makes a T-Pot install more useful during
+deception-oriented deployments by helping it look intentional rather than
+stock.
+
+In practice, that means:
+
+- more believable hostnames and service identities
+- consistent persona data across containers, banners, and injected files
+- faster deployment for operators who do not want to hand-tune YAML on-host
+- safer changes through preview mode, backups, and restore support
 
 ## What DeepPrint Does
 
@@ -18,6 +33,28 @@ be guided through selecting and deploying a believable footprint.
 - Injects local files like `motd.txt` or `web.config` into running containers
 - Supports both preview mode and live deployment mode
 - Can operate directly against a live `~/tpotce` installation
+
+## Quick Start
+
+For most operators on a live T-Pot host, this is the fastest path:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sparksbenjamin/DeepPrint/main/bootstrap.py | python3 -
+```
+
+That bootstrap will:
+
+1. Download DeepPrint into `~/.deepprint`
+2. Ensure `PyYAML` is installed
+3. Launch the interactive wizard
+4. Detect a likely T-Pot installation such as `~/tpotce`
+5. Walk you through persona selection, prompts, preview, and deployment
+
+If you only want to preview a persona first:
+
+```bash
+python3 DeepPrint/deepprint.py --deploy power_plant --dry-run
+```
 
 ## Repository Layout
 
@@ -65,13 +102,8 @@ On a T-Pot host, run:
 curl -fsSL https://raw.githubusercontent.com/sparksbenjamin/DeepPrint/main/bootstrap.py | python3 -
 ```
 
-That command will:
-
-1. Download DeepPrint into `~/.deepprint`
-2. Ensure `PyYAML` is installed
-3. Launch the interactive wizard
-4. Detect a likely T-Pot installation such as `~/tpotce`
-5. Guide the operator through selecting and deploying a persona
+This is the recommended deployment path when you want the tool to guide the
+entire process from persona selection through render and deployment.
 
 ## Interactive Usage
 
