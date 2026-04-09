@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+*.py[cod]
+
+DeepPrint/.deepprint_rendered/
+DeepPrint/.env.deepprint
+DeepPrint/tpot_deepprint.yml
+
+*.deepprint.bak
+*.deepprint.yml
+.env.deepprint
+
+.coverage

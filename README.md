@@ -50,6 +50,13 @@ DeepPrint/
 The bootstrap script will attempt to install `PyYAML` automatically if it is
 missing.
 
+If you are working from a clone of this repository, install runtime
+dependencies with:
+
+```bash
+python -m pip install -r requirements.txt
+```
+
 ## One-Line Launch On T-Pot
 
 On a T-Pot host, run:
@@ -115,6 +122,12 @@ Deploy directly to a live T-Pot host:
 python3 DeepPrint/deepprint.py --deploy power_plant --tpot-root ~/tpotce
 ```
 
+Restore the previous live T-Pot configuration from DeepPrint backup files:
+
+```bash
+python3 DeepPrint/deepprint.py --restore --tpot-root ~/tpotce
+```
+
 ## Live T-Pot Behavior
 
 When `--tpot-root ~/tpotce` is used, DeepPrint treats that directory as the
@@ -138,6 +151,25 @@ It also writes:
 
 These generated files make it easier to inspect what DeepPrint rendered before
 or after deployment.
+
+## Rollback And Restore
+
+Every live deployment stores backups of the previously active T-Pot files:
+
+- `docker-compose.yml.deepprint.bak`
+- `.env.deepprint.bak`
+
+To roll back to the last pre-DeepPrint state:
+
+```bash
+python3 DeepPrint/deepprint.py --restore --tpot-root ~/tpotce
+```
+
+The restore command will:
+
+1. Stop the currently active stack
+2. Copy the DeepPrint backup files back into place
+3. Restart T-Pot using the restored files
 
 ## Prompted Persona Values
 
@@ -221,8 +253,8 @@ catalog summary.
 ## CLI Reference
 
 ```text
-usage: deepprint.py [-h] [--deploy PERSONA] [--list-personas] [--interactive]
-                    [--dry-run] [--tpot-root TPOT_ROOT]
+usage: deepprint.py [-h] [--deploy PERSONA] [--list-personas] [--restore]
+                    [--interactive] [--dry-run] [--tpot-root TPOT_ROOT]
                     [--base-compose BASE_COMPOSE] [--base-env BASE_ENV]
                     [--output-compose OUTPUT_COMPOSE]
                     [--output-env OUTPUT_ENV]
@@ -232,6 +264,8 @@ usage: deepprint.py [-h] [--deploy PERSONA] [--list-personas] [--interactive]
   Render or deploy the specified persona.
 - `--list-personas`
   Print all available personas and exit.
+- `--restore`
+  Restore `docker-compose.yml` and `.env` from DeepPrint backup files.
 - `--interactive`
   Launch the guided wizard.
 - `--dry-run`
@@ -261,7 +295,22 @@ usage: deepprint.py [-h] [--deploy PERSONA] [--list-personas] [--interactive]
 Useful commands while working on the project:
 
 ```bash
+python -m pip install -r requirements.txt
 python -m py_compile DeepPrint/deepprint.py bootstrap.py
 python DeepPrint/deepprint.py --list-personas
 python DeepPrint/deepprint.py --deploy power_plant --dry-run
+python -m unittest discover -s tests -v
 ```
+
+## Testing And CI
+
+The repository includes:
+
+- `tests/test_deepprint.py`
+  Smoke tests for persona rendering, live deploy file handling, and restore.
+- `tests/test_bootstrap.py`
+  A bootstrap smoke test that verifies the one-line launcher builds a local
+  install and hands control to the CLI.
+- `.github/workflows/ci.yml`
+  GitHub Actions workflow that installs dependencies, compiles the scripts,
+  lists personas, and runs the unit test suite on Python 3.10 and 3.11.

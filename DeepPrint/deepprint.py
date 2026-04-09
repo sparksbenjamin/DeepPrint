@@ -9,7 +9,7 @@ import sys
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 try:
     import yaml
@@ -213,6 +213,43 @@ class DeepPrintEngine:
                 ),
             )
 
+    def restore(self) -> None:
+        if self.paths.tpot_root is None:
+            raise DeepPrintError(
+                "Restore mode requires a live T-Pot installation via --tpot-root."
+            )
+
+        backup_compose = self._get_backup_compose_path()
+        backup_env = self._get_backup_env_path()
+        if not backup_compose.exists():
+            raise DeepPrintError(
+                f"Compose backup not found: {backup_compose}"
+            )
+        if not backup_env.exists():
+            raise DeepPrintError(
+                f"Environment backup not found: {backup_env}"
+            )
+
+        current_project_name = self._get_project_name(self.paths.base_env)
+        self._run_compose_stack(
+            compose_path=self.paths.base_compose,
+            env_path=self.paths.base_env,
+            project_name=current_project_name,
+            action="down",
+        )
+
+        shutil.copy2(backup_compose, self.paths.base_compose)
+        shutil.copy2(backup_env, self.paths.base_env)
+
+        restored_project_name = self._get_project_name(self.paths.base_env)
+        self._run_compose_stack(
+            compose_path=self.paths.base_compose,
+            env_path=self.paths.base_env,
+            project_name=restored_project_name,
+            action="up",
+            extra_args=["-d"],
+        )
+
     def _deploy_to_tpot_root(self, deployment: RenderedDeployment) -> None:
         self._run_compose_stack(
             compose_path=self.paths.base_compose,
@@ -238,15 +275,25 @@ class DeepPrintEngine:
         if self.paths.base_compose.exists():
             shutil.copy2(
                 self.paths.base_compose,
-                self.paths.base_compose.with_name(
-                    f"{self.paths.base_compose.name}.deepprint.bak"
-                ),
+                self._get_backup_compose_path(),
             )
         if self.paths.base_env.exists():
             shutil.copy2(
                 self.paths.base_env,
-                self.paths.base_env.with_name(".env.deepprint.bak"),
+                self._get_backup_env_path(),
             )
+
+    def _get_backup_compose_path(self) -> Path:
+        return self.paths.base_compose.with_name(
+            f"{self.paths.base_compose.name}.deepprint.bak"
+        )
+
+    def _get_backup_env_path(self) -> Path:
+        return self.paths.base_env.with_name(".env.deepprint.bak")
+
+    def _get_project_name(self, env_path: Path) -> str:
+        env_values = self._load_env_file(env_path)
+        return env_values.get("COMPOSE_PROJECT_NAME", "tpot")
 
     def _run_compose_stack(
         self,
@@ -407,7 +454,7 @@ class DeepPrintEngine:
             )
 
             answer = rendered_default or ""
-            if sys.stdin.isatty():
+            if can_prompt_interactively():
                 answer = self._prompt_user(
                     message=rendered_message,
                     default=rendered_default,
@@ -433,7 +480,7 @@ class DeepPrintEngine:
         if default not in (None, ""):
             prompt += f" [{default}]"
         prompt += ": "
-        response = input(prompt).strip()
+        response = prompt_text(prompt).strip()
         if response:
             return response
         return default or ""
@@ -836,10 +883,55 @@ def humanize_persona_name(persona_name: str) -> str:
     return persona_name.replace("_", " ").replace("-", " ").title()
 
 
+def open_console_input_stream() -> TextIO | None:
+    if sys.stdin.isatty():
+        return sys.stdin
+
+    console_path = "CONIN$" if os.name == "nt" else "/dev/tty"
+    try:
+        return open(console_path, "r", encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def can_prompt_interactively() -> bool:
+    console_input = open_console_input_stream()
+    if console_input is None:
+        return False
+    if console_input is not sys.stdin:
+        console_input.close()
+    return True
+
+
+def prompt_text(prompt: str) -> str:
+    if sys.stdin.isatty():
+        return input(prompt)
+
+    console_input = open_console_input_stream()
+    if console_input is None:
+        raise DeepPrintError(
+            "Interactive input is unavailable. Re-run in a terminal, or supply "
+            "defaults via a non-interactive command."
+        )
+
+    try:
+        print(prompt, end="", flush=True)
+        response = console_input.readline()
+    finally:
+        if console_input is not sys.stdin:
+            console_input.close()
+
+    if response == "":
+        raise DeepPrintError(
+            "Interactive input reached EOF on the controlling terminal."
+        )
+    return response.rstrip("\r\n")
+
+
 def prompt_yes_no(message: str, default: bool) -> bool:
     default_hint = "Y/n" if default else "y/N"
     while True:
-        response = input(f"{message} [{default_hint}]: ").strip().lower()
+        response = prompt_text(f"{message} [{default_hint}]: ").strip().lower()
         if not response:
             return default
         if response in {"y", "yes"}:
@@ -882,7 +974,7 @@ def select_persona_interactive(personas: list[str]) -> str:
         print(f"  {index}. {humanize_persona_name(persona)} ({persona})")
 
     while True:
-        response = input("Choose a persona by number or name: ").strip()
+        response = prompt_text("Choose a persona by number or name: ").strip()
         if not response:
             print("Please choose a persona.")
             continue
@@ -906,7 +998,7 @@ def choose_tpot_root_interactive() -> Path | None:
         default_candidate = candidates[0]
         print(f"Detected T-Pot installation: {default_candidate}")
         while True:
-            response = input(
+            response = prompt_text(
                 "Press Enter to use it, type a different path, or type 'demo' "
                 "to use bundled templates only: "
             ).strip()
@@ -923,7 +1015,7 @@ def choose_tpot_root_interactive() -> Path | None:
             )
 
     while True:
-        response = input(
+        response = prompt_text(
             "Enter the path to your T-Pot installation, or type 'demo' to use "
             "bundled templates only: "
         ).strip()
@@ -942,8 +1034,13 @@ def configure_interactive_args(args: argparse.Namespace) -> argparse.Namespace:
     updated_args = argparse.Namespace(**vars(args))
     engine = DeepPrintEngine(build_runtime_paths(updated_args))
     personas = engine.list_personas()
-    if not personas:
+    if not personas and not updated_args.restore:
         raise DeepPrintError("No persona footprints are available.")
+
+    if updated_args.restore:
+        if updated_args.tpot_root is None:
+            updated_args.tpot_root = choose_tpot_root_interactive()
+        return updated_args
 
     if not updated_args.deploy:
         updated_args.deploy = select_persona_interactive(personas)
@@ -973,6 +1070,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--list-personas",
         action="store_true",
         help="List deployable persona footprints and exit.",
+    )
+    parser.add_argument(
+        "--restore",
+        action="store_true",
+        help="Restore docker-compose.yml and .env from DeepPrint backup files.",
     )
     parser.add_argument(
         "--interactive",
@@ -1060,7 +1162,7 @@ def main() -> int:
     args = parser.parse_args()
     interactive_mode = not args.list_personas and (
         args.interactive or (
-        not args.deploy and not args.list_personas and sys.stdin.isatty()
+            not args.deploy and not args.restore and not args.list_personas and sys.stdin.isatty()
         )
     )
 
@@ -1079,8 +1181,32 @@ def main() -> int:
                 print(persona)
             return 0
 
+        if args.restore:
+            if args.dry_run:
+                raise DeepPrintError("Restore mode does not support --dry-run.")
+            if engine.paths.tpot_root is None:
+                raise DeepPrintError(
+                    "Restore mode requires --tpot-root to point at a live T-Pot installation."
+                )
+            if interactive_mode:
+                print(f"T-Pot root: {engine.paths.tpot_root}")
+                print(
+                    "DeepPrint will restore docker-compose.yml and .env from the "
+                    "DeepPrint backup files in that directory."
+                )
+                if not prompt_yes_no("Proceed with restore", default=True):
+                    print("Restore cancelled.")
+                    return 0
+            engine.restore()
+            print(
+                f"DeepPrint restored the T-Pot configuration in {engine.paths.tpot_root}."
+            )
+            return 0
+
         if not args.deploy:
-            parser.error("one of the arguments --deploy or --list-personas is required")
+            parser.error(
+                "one of the arguments --deploy, --restore, or --list-personas is required"
+            )
 
         deployment = engine.render(args.deploy)
 
