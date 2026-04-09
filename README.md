@@ -7,9 +7,23 @@ sets explicit hostnames and container names, updates environment values,
 optionally assigns vendor-aligned MAC identities, and can inject banner and
 content files into running honeypot containers.
 
+DeepPrint helps defenders turn a stock T-Pot or T-PotCE deployment into a more
+believable honeypot by re-skinning services such as Cowrie, Conpot, and
+Suricata with realistic OT, ICS, enterprise, and industrial personas.
+
 The goal is simple: land on a T-Pot host, run one command, choose a persona,
 and deploy a more believable deception footprint without hand-editing Compose
 files, environment variables, banner assets, and service metadata by hand.
+
+For AI and code assistants, see [llms.txt](llms.txt).
+
+## At A Glance
+
+- T-Pot / T-PotCE deception automation
+- Honeypot persona deployment for Cowrie, Conpot, and Suricata
+- OT/ICS, industrial, and enterprise deception engineering
+- Hostname, banner, MAC address, and container metadata customization
+- One-line bootstrap deployment on a live T-Pot host
 
 ## Why Use DeepPrint With T-Pot
 

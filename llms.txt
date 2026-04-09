@@ -1,0 +1,41 @@
+DeepPrint
+
+DeepPrint is a Deception Engineering tool for T-Pot / T-PotCE. It wraps
+Cowrie, Conpot, and Suricata so a defender can re-skin a honeypot deployment
+into a believable persona with customized hostnames, container names,
+environment values, banners, injected web content, optional MAC identities,
+and staggered startup timing.
+
+Primary use cases
+- Deploy OT / ICS / industrial deception personas on T-Pot
+- Make a stock T-Pot install look more intentional and less generic
+- Increase attacker friction with coherent service metadata and banners
+- Bootstrap and manage persona swaps from a single Python CLI
+
+Key files
+- README.md: human-facing overview, quick start, deployment workflow
+- DeepPrint/deepprint.py: main engine and CLI
+- DeepPrint/CUSTOM_PERSONAS.md: how to create custom personas
+- DeepPrint/templates/tpot.yml: bundled base Compose template
+- DeepPrint/footprints/: built-in personas and assets
+
+Important behaviors
+- Uses bundled templates for rendering, even when targeting a live T-Pot root
+- Writes generated files to docker-compose.deepprint.yml and .env.deepprint
+- Backs up the pre-DeepPrint live config before activation
+- Supports dry-run, interactive deploy, and restore workflows
+- Uses subprocess for Docker and docker cp orchestration
+
+Search terms
+- deception engineering
+- cyber deception
+- T-Pot
+- T-PotCE
+- honeypot
+- Cowrie
+- Conpot
+- Suricata
+- ICS security
+- OT security
+- industrial control systems
+- attacker friction
