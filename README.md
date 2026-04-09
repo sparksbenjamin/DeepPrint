@@ -209,6 +209,9 @@ Personas can define a `prompts:` block. When present, DeepPrint asks the
 operator for those values in an interactive terminal and uses the answers to
 render service settings and injectable text files.
 
+If you want to build your own footprint, see
+[DeepPrint/CUSTOM_PERSONAS.md](DeepPrint/CUSTOM_PERSONAS.md).
+
 Typical prompted values include:
 
 - site name
@@ -256,6 +259,9 @@ files_to_inject:
 
 DeepPrint validates required keys and will fail fast on missing or malformed
 persona data.
+
+For a full step-by-step custom persona guide, see
+[DeepPrint/CUSTOM_PERSONAS.md](DeepPrint/CUSTOM_PERSONAS.md).
 
 ## Included Footprints
 
