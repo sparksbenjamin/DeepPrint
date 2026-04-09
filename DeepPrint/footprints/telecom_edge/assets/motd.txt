@@ -1,0 +1,8 @@
+***************************************************************
+* Skyline 5G Edge POP 12                                      *
+* Network Operations Bastion                                  *
+* Edge peering and power systems are under active monitoring. *
+***************************************************************
+
+Maintenance window: POP12-NOC
+Rack domain: DC Power Room

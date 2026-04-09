@@ -1,0 +1,8 @@
+***************************************************************
+* Atlas Dock Fulfillment Hub                                  *
+* Warehouse Management Administration Console                 *
+* Conveyor and sorter maintenance traffic is monitored.       *
+***************************************************************
+
+Current line focus: West Sortation Loop
+Shift lead: AD-WHS-OPS

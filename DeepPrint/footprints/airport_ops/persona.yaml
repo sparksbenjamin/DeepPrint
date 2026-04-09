@@ -1,0 +1,34 @@
+global_prefix: falconfield
+
+services:
+  cowrie:
+    hostname: maintenance-ops-bastion
+    container_name: falconfield-ops-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: FFD-OPS-NOC01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: airfield-operations
+
+  conpot:
+    hostname: baggage-scs-plc
+    container_name: falconfield-baggage-plc
+    environment_variables:
+      CONPOT_TEMPLATE: airport
+      CONPOT_DEVICE_NAME: Siemens Baggage Control PLC
+      PLC_SITE_NAME: Falcon Field Terminal A
+      PLC_PROCESS_AREA: Baggage Sortation Hall
+
+  suricata:
+    hostname: terminal-sensor
+    container_name: falconfield-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: FALCONFIELD-TERM-A
+      SENSOR_ROLE: terminal-security
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

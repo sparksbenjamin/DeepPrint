@@ -1,0 +1,8 @@
+***************************************************************
+* IronRidge Mine Complex                                      *
+* Concentrator Administration Node                            *
+* Dispatch and ore-processing sessions are monitored.         *
+***************************************************************
+
+Operational area: West Crusher and Conveyance
+Mine control desk: IR-MINECTRL

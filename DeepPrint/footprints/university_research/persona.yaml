@@ -1,0 +1,34 @@
+global_prefix: meridianlab
+
+services:
+  cowrie:
+    hostname: hpc-login-gateway
+    container_name: meridianlab-hpc-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: MERIDIAN-HPC-GW01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: lab-admin
+
+  conpot:
+    hostname: cryo-loop-controller
+    container_name: meridianlab-cryo-plc
+    environment_variables:
+      CONPOT_TEMPLATE: lab
+      CONPOT_DEVICE_NAME: Siemens PCS 7 Cryogenic Controller
+      PLC_SITE_NAME: Meridian Applied Physics Lab
+      PLC_PROCESS_AREA: Cryogenic Loop A
+
+  suricata:
+    hostname: research-sensor
+    container_name: meridianlab-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: MERIDIAN-LAB-SENSOR
+      SENSOR_ROLE: instrumentation-monitoring
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

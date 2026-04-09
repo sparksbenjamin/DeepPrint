@@ -1,0 +1,8 @@
+***************************************************************
+* SiliconCrest Fab 2                                          *
+* Tool Support Bastion                                        *
+* Process utility and tool support sessions are logged.       *
+***************************************************************
+
+Utility domain: Lithography Bay 4
+Fab operations: SC-FAB-NOC

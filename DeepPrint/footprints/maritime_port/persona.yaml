@@ -1,0 +1,34 @@
+global_prefix: blueharbor
+
+services:
+  cowrie:
+    hostname: port-ops-terminal
+    container_name: blueharbor-ops-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: BLUEHARBOR-PORT01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: terminal-ops
+
+  conpot:
+    hostname: crane-plc-berth7
+    container_name: blueharbor-crane-plc
+    environment_variables:
+      CONPOT_TEMPLATE: port
+      CONPOT_DEVICE_NAME: Siemens Quay Crane PLC
+      PLC_SITE_NAME: Blue Harbor Container Terminal
+      PLC_PROCESS_AREA: Berth 7 Crane Row
+
+  suricata:
+    hostname: quay-sensor
+    container_name: blueharbor-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: BLUEHARBOR-QUAY-SENSOR
+      SENSOR_ROLE: port-perimeter
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

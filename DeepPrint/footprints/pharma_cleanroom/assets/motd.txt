@@ -1,0 +1,8 @@
+***************************************************************
+* Vanguard Biologics Facility 2                               *
+* Batch Operations Administration Console                     *
+* GMP-regulated manufacturing sessions are logged.            *
+***************************************************************
+
+Controlled suite: Cleanroom HVAC Cascade 5
+Quality contact: VG-QA-OPS

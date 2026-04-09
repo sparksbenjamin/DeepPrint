@@ -1,0 +1,8 @@
+***************************************************************
+* MarketPoint Regional Payments Hub                           *
+* Store Administration Gateway                                *
+* POS support and settlement sessions are monitored.          *
+***************************************************************
+
+Primary segment: POS Back Office Cluster
+Support queue: MP-PAY-OPS

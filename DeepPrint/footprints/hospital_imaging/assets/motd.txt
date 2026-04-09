@@ -1,0 +1,8 @@
+***************************************************************
+* Northbridge Medical Center                                  *
+* Radiology Systems Administration Bastion                    *
+* All PACS and modality maintenance sessions are logged.      *
+***************************************************************
+
+Imaging zone: Suite 3 CT Control Room
+Biomed contact: NBH-CLIN-ENG

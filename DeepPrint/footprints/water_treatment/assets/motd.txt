@@ -1,0 +1,8 @@
+***************************************************************
+* Clearwater Water Reclamation Plant                          *
+* SCADA Jump Host                                             *
+* Unauthorized access to treatment controls is prohibited.    *
+***************************************************************
+
+Active process area: Chlorination Train 2
+Duty operator: CW-WATER-OPS

@@ -1,0 +1,8 @@
+***************************************************************
+* Blue Harbor Container Terminal                              *
+* Port Operations Access Node                                 *
+* Crane and berth control sessions are monitored.             *
+***************************************************************
+
+Current berth group: Berth 7 Crane Row
+Terminal watch: BH-PORT-OPS

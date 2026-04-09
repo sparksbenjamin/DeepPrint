@@ -1,0 +1,34 @@
+global_prefix: ironstack
+
+services:
+  cowrie:
+    hostname: dc-admin-jump
+    container_name: ironstack-admin-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: IRONSTACK-CORE01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: datacenter-admin
+
+  conpot:
+    hostname: ups-transfer-controller
+    container_name: ironstack-ups-plc
+    environment_variables:
+      CONPOT_TEMPLATE: datacenter
+      CONPOT_DEVICE_NAME: Siemens UPS Transfer PLC
+      PLC_SITE_NAME: IronStack Colo North
+      PLC_PROCESS_AREA: Power Distribution Room
+
+  suricata:
+    hostname: spine-sensor
+    container_name: ironstack-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: IRONSTACK-SPINE-SENSOR
+      SENSOR_ROLE: core-network
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

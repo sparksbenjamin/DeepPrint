@@ -1,0 +1,34 @@
+global_prefix: ironridge
+
+services:
+  cowrie:
+    hostname: concentrator-admin-node
+    container_name: ironridge-admin-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: IR-MINE-OPS01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: mine-admin
+
+  conpot:
+    hostname: crusher-plc-west
+    container_name: ironridge-crusher-plc
+    environment_variables:
+      CONPOT_TEMPLATE: mining
+      CONPOT_DEVICE_NAME: Siemens Crusher Control PLC
+      PLC_SITE_NAME: IronRidge Mine Complex
+      PLC_PROCESS_AREA: West Crusher and Conveyance
+
+  suricata:
+    hostname: pit-sensor
+    container_name: ironridge-mine-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: IRONRIDGE-MINE-SENSOR
+      SENSOR_ROLE: dispatch-and-processing
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

@@ -1,0 +1,34 @@
+global_prefix: vanguardbio
+
+services:
+  cowrie:
+    hostname: batch-admin-console
+    container_name: vanguardbio-batch-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: VG-BATCH-OPS01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: manufacturing-admin
+
+  conpot:
+    hostname: hvac-bms-controller
+    container_name: vanguardbio-hvac-plc
+    environment_variables:
+      CONPOT_TEMPLATE: cleanroom
+      CONPOT_DEVICE_NAME: Siemens Desigo Cleanroom PLC
+      PLC_SITE_NAME: Vanguard Biologics Facility 2
+      PLC_PROCESS_AREA: Suite 5 HVAC Cascade
+
+  suricata:
+    hostname: compliance-sensor
+    container_name: vanguardbio-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: VANGUARD-CLEANROOM-IDS
+      SENSOR_ROLE: regulated-segment
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

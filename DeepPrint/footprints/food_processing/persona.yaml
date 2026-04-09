@@ -1,0 +1,34 @@
+global_prefix: harvestcrest
+
+services:
+  cowrie:
+    hostname: plant-admin-bastion
+    container_name: harvestcrest-admin-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: HC-PLANT-OPS01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: plant-admin
+
+  conpot:
+    hostname: packaging-line-plc
+    container_name: harvestcrest-line-plc
+    environment_variables:
+      CONPOT_TEMPLATE: food-processing
+      CONPOT_DEVICE_NAME: Siemens Packaging Line PLC
+      PLC_SITE_NAME: HarvestCrest Foods Plant 3
+      PLC_PROCESS_AREA: Packaging Hall South
+
+  suricata:
+    hostname: refrigeration-sensor
+    container_name: harvestcrest-plant-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: HARVESTCREST-PLANT-SENSOR
+      SENSOR_ROLE: packaging-and-coldchain
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

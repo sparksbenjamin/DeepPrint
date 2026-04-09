@@ -1,0 +1,8 @@
+***************************************************************
+* MetroLink Operations Center                                 *
+* Dispatch Administration Console                             *
+* Dispatch, signal, and switch actions are audited.           *
+***************************************************************
+
+Managed territory: East Junction Interlocking
+Rail control desk: ML-ROC

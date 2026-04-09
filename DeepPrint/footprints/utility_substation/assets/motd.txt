@@ -1,0 +1,8 @@
+***************************************************************
+* NorthGrid Substation 18                                     *
+* Relay Engineering Access Node                               *
+* Protective relay and breaker sessions are monitored.        *
+***************************************************************
+
+Primary yard: 230kV Breaker Lineup B
+Operations contact: NG-GRID-DESK

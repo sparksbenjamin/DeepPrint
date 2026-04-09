@@ -1,0 +1,8 @@
+***************************************************************
+* Red Mesa Pipeline District                                  *
+* Compressor Station Operations Gateway                       *
+* Pipeline telemetry and control sessions are recorded.       *
+***************************************************************
+
+Current district: Station 4 West Loop
+Operations desk: RM-MIDSTREAM

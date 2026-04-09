@@ -1,0 +1,8 @@
+***************************************************************
+* Falcon Field Terminal A                                     *
+* Airfield Operations Bastion                                 *
+* Access to baggage and terminal control systems is logged.   *
+***************************************************************
+
+Operational focus: Baggage Sortation Hall
+Airport ops desk: FFD-AOC

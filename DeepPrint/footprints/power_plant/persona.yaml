@@ -1,0 +1,76 @@
+prompts:
+  - id: global_prefix
+    message: Hostname prefix for this power plant deployment
+    default: riverbend
+    required: true
+  - id: site_name
+    message: Power plant display name
+    default: River Bend Generation Station
+    required: true
+  - id: process_area
+    message: Process area label
+    default: Turbine Hall B
+    required: true
+  - id: cowrie_hostname_suffix
+    message: Cowrie hostname suffix
+    default: eng-workstation-ssh
+    required: true
+  - id: cowrie_login_hostname
+    message: SSH banner hostname presented by Cowrie
+    default: SIEMENS-ENG-WS01
+    required: true
+  - id: conpot_hostname_suffix
+    message: Conpot hostname suffix
+    default: s7-plc-gateway
+    required: true
+  - id: suricata_hostname_suffix
+    message: Suricata hostname suffix
+    default: soc-sensor
+    required: true
+  - id: sensor_name
+    message: Suricata sensor name
+    default: RIVERBEND-GRID-SENSOR
+    required: true
+  - id: banner_notice
+    message: Login banner warning line
+    default: Authorized maintenance sessions are monitored and recorded.
+    required: true
+  - id: operations_contact
+    message: Operations contact or shift supervisor
+    default: RB-GEN-OPS
+    required: true
+
+global_prefix: "{{global_prefix}}"
+
+services:
+  cowrie:
+    hostname: "{{cowrie_hostname_suffix}}"
+    container_name: siemens-eng-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: "{{cowrie_login_hostname}}"
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: engineering-access
+
+  conpot:
+    hostname: "{{conpot_hostname_suffix}}"
+    container_name: siemens-s7-gateway
+    environment_variables:
+      CONPOT_TEMPLATE: siemens
+      CONPOT_DEVICE_NAME: Siemens S7-400 PLC
+      PLC_SITE_NAME: "{{site_name}}"
+      PLC_PROCESS_AREA: "{{process_area}}"
+
+  suricata:
+    hostname: "{{suricata_hostname_suffix}}"
+    container_name: siemens-grid-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: "{{sensor_name}}"
+      SENSOR_ROLE: perimeter-ics
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

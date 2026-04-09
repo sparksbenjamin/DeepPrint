@@ -1,0 +1,9 @@
+******************************************************************
+* Siemens Energy Operations Access Node                          *
+* {{site_name}}                                                  *
+* {{banner_notice}}                                              *
+******************************************************************
+
+Last maintenance window: 2026-04-01 02:00 UTC
+Process area: {{process_area}}
+Shift supervisor: {{operations_contact}}

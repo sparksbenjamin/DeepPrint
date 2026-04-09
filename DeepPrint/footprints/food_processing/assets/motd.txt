@@ -1,0 +1,8 @@
+***************************************************************
+* HarvestCrest Foods Plant 3                                  *
+* Plant Administration Bastion                                *
+* Packaging and refrigeration control sessions are logged.    *
+***************************************************************
+
+Process area: Packaging Hall South
+Plant desk: HC-PROD-OPS

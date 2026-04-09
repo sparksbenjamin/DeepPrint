@@ -1,0 +1,34 @@
+global_prefix: skyline5g
+
+services:
+  cowrie:
+    hostname: edge-admin-bastion
+    container_name: skyline5g-admin-ssh
+    environment_variables:
+      COWRIE_HOSTNAME: SKYLINE-EDGE-ADM01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: edge-admin
+
+  conpot:
+    hostname: power-rectifier-plc
+    container_name: skyline5g-power-plc
+    environment_variables:
+      CONPOT_TEMPLATE: telecom
+      CONPOT_DEVICE_NAME: Siemens Power Rectifier PLC
+      PLC_SITE_NAME: Skyline 5G Edge POP 12
+      PLC_PROCESS_AREA: DC Power Room
+
+  suricata:
+    hostname: edge-sensor
+    container_name: skyline5g-edge-ids
+    environment_variables:
+      SURICATA_SENSOR_NAME: SKYLINE5G-EDGE-SENSOR
+      SENSOR_ROLE: edge-peering
+
+files_to_inject:
+  - service: cowrie
+    source: assets/motd.txt
+    destination: /etc/motd
+  - service: conpot
+    source: assets/web.config
+    destination: /opt/conpot/conpot/templates/default/http/web.config

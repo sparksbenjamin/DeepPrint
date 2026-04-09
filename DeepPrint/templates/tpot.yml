@@ -1,0 +1,36 @@
+version: "3.8"
+
+services:
+  cowrie:
+    image: ghcr.io/telekom-security/cowrie:latest
+    restart: unless-stopped
+    ports:
+      - "2222:2222"
+    environment:
+      COWRIE_TELNET_ENABLED: "true"
+      COWRIE_MOTD_PATH: /etc/motd
+    networks:
+      - tpot
+
+  conpot:
+    image: ghcr.io/telekom-security/conpot:latest
+    restart: unless-stopped
+    ports:
+      - "102:102"
+      - "8080:8080"
+    environment:
+      CONPOT_TEMPLATE: default
+      CONPOT_DEVICE_NAME: generic-controller
+    networks:
+      - tpot
+
+  suricata:
+    image: ghcr.io/telekom-security/suricata:latest
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      SURICATA_SENSOR_NAME: baseline-sensor
+
+networks:
+  tpot:
+    driver: bridge
