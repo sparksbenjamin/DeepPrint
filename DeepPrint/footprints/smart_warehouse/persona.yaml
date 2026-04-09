@@ -1,5 +1,4 @@
 global_prefix: atlasdock
-
 services:
   cowrie:
     hostname: warehouse-admin-terminal
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: ATLAS-WMS-ADMIN01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: logistics-admin
-
   conpot:
     hostname: sorter-plc-west
     container_name: atlasdock-sorter-plc
     environment_variables:
-      CONPOT_TEMPLATE: warehouse
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens SIMATIC Sorter PLC
       PLC_SITE_NAME: Atlas Dock Fulfillment Hub
       PLC_PROCESS_AREA: Conveyor Zone West
-
   suricata:
     hostname: dock-sensor
     container_name: atlasdock-ids
     environment_variables:
       SURICATA_SENSOR_NAME: ATLASDOCK-WMS-IDS
       SENSOR_ROLE: conveyor-core
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

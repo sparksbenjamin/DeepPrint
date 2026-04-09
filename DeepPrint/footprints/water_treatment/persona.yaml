@@ -1,5 +1,4 @@
 global_prefix: clearwater
-
 services:
   cowrie:
     hostname: scada-jump-host
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: CW-SCADA-JUMP01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: treatment-ops-jump
-
   conpot:
     hostname: chlorine-dosing-plc
     container_name: clearwater-cl2-plc
     environment_variables:
-      CONPOT_TEMPLATE: water-treatment
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens S7-1200 Dosing PLC
       PLC_SITE_NAME: Clearwater Water Reclamation Plant
       PLC_PROCESS_AREA: Chlorination Train 2
-
   suricata:
     hostname: plant-security-sensor
     container_name: clearwater-ids-edge
     environment_variables:
       SURICATA_SENSOR_NAME: CLEARWATER-OT-SENSOR
       SENSOR_ROLE: treatment-perimeter
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

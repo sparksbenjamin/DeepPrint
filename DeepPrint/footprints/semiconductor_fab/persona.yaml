@@ -1,5 +1,4 @@
 global_prefix: siliconcrest
-
 services:
   cowrie:
     hostname: tool-support-bastion
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: SC-FAB-TOOL01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: fab-tool-support
-
   conpot:
     hostname: gas-cabinet-plc
     container_name: siliconcrest-gas-plc
     environment_variables:
-      CONPOT_TEMPLATE: semiconductor
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens Gas Delivery Controller
       PLC_SITE_NAME: SiliconCrest Fab 2
       PLC_PROCESS_AREA: Lithography Bay 4 Utilities
-
   suricata:
     hostname: fab-sensor
     container_name: siliconcrest-fab-ids
     environment_variables:
       SURICATA_SENSOR_NAME: SILICONCREST-FAB2-SENSOR
       SENSOR_ROLE: cleanroom-utilities
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

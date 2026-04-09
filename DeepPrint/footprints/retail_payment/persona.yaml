@@ -1,5 +1,4 @@
 global_prefix: marketpoint
-
 services:
   cowrie:
     hostname: store-admin-gateway
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: MP-STORE-OPS01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: retail-admin
-
   conpot:
     hostname: pos-backoffice-controller
     container_name: marketpoint-pos-plc
     environment_variables:
-      CONPOT_TEMPLATE: retail
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens Store Infrastructure Controller
       PLC_SITE_NAME: MarketPoint Regional Payments Hub
       PLC_PROCESS_AREA: POS Back Office Cluster
-
   suricata:
     hostname: payments-sensor
     container_name: marketpoint-payments-ids
     environment_variables:
       SURICATA_SENSOR_NAME: MARKETPOINT-PAYMENTS-SENSOR
       SENSOR_ROLE: pos-segmentation
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

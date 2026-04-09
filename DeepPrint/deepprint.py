@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import random
 import re
 import shutil
 import subprocess
 import sys
+import time
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
@@ -70,6 +72,10 @@ class PromptSpec:
 
 
 PLACEHOLDER_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
+MAC_ADDRESS_PATTERN = re.compile(r"^(?:[0-9a-f]{2}:){5}[0-9a-f]{2}$")
+MAC_PREFIX_PATTERN = re.compile(r"^(?:[0-9a-f]{2}:){2}[0-9a-f]{2}$")
+STARTUP_DELAY_MIN_SECONDS = 1.5
+STARTUP_DELAY_MAX_SECONDS = 4.5
 
 
 class DeepPrintEngine:
@@ -132,6 +138,9 @@ class DeepPrintEngine:
             template_context[f"{service_name}_container_name"] = str(
                 service_definition.get("container_name", "")
             )
+            template_context[f"{service_name}_mac_address"] = str(
+                service_definition.get("mac_address", "")
+            )
 
         injections = self._build_injection_plan(
             persona_dir=persona_dir,
@@ -180,12 +189,11 @@ class DeepPrintEngine:
                 project_name=deployment.project_name,
                 action="down",
             )
-            self._run_compose_stack(
+            self._start_services_with_jitter(
                 compose_path=self.paths.output_compose,
                 env_path=self.paths.output_env,
                 project_name=deployment.project_name,
-                action="up",
-                extra_args=["-d"],
+                service_names=list(deployment.compose_data["services"]),
             )
 
         service_map = deployment.compose_data["services"]
@@ -219,6 +227,8 @@ class DeepPrintEngine:
                 "Restore mode requires a live T-Pot installation via --tpot-root."
             )
 
+        active_compose = self._get_active_compose_path()
+        active_env = self._get_active_env_path()
         backup_compose = self._get_backup_compose_path()
         backup_env = self._get_backup_env_path()
         if not backup_compose.exists():
@@ -230,66 +240,89 @@ class DeepPrintEngine:
                 f"Environment backup not found: {backup_env}"
             )
 
-        current_project_name = self._get_project_name(self.paths.base_env)
+        current_project_name = self._get_project_name(active_env)
         self._run_compose_stack(
-            compose_path=self.paths.base_compose,
-            env_path=self.paths.base_env,
+            compose_path=active_compose,
+            env_path=active_env,
             project_name=current_project_name,
             action="down",
         )
 
-        shutil.copy2(backup_compose, self.paths.base_compose)
-        shutil.copy2(backup_env, self.paths.base_env)
+        shutil.copy2(backup_compose, active_compose)
+        shutil.copy2(backup_env, active_env)
 
-        restored_project_name = self._get_project_name(self.paths.base_env)
-        self._run_compose_stack(
-            compose_path=self.paths.base_compose,
-            env_path=self.paths.base_env,
+        restored_project_name = self._get_project_name(active_env)
+        restored_compose = self._load_yaml(active_compose)
+        self._validate_compose_template(restored_compose)
+        self._start_services_with_jitter(
+            compose_path=active_compose,
+            env_path=active_env,
             project_name=restored_project_name,
-            action="up",
-            extra_args=["-d"],
+            service_names=list(restored_compose["services"]),
         )
 
     def _deploy_to_tpot_root(self, deployment: RenderedDeployment) -> None:
+        active_compose = self._get_active_compose_path()
+        active_env = self._get_active_env_path()
+        current_project_name = self._get_project_name(active_env)
         self._run_compose_stack(
-            compose_path=self.paths.base_compose,
-            env_path=self.paths.base_env,
-            project_name=deployment.project_name,
+            compose_path=active_compose,
+            env_path=active_env,
+            project_name=current_project_name,
             action="down",
         )
 
         self.write_artifacts(deployment)
         self._backup_active_tpot_files()
-        shutil.copy2(self.paths.output_compose, self.paths.base_compose)
-        shutil.copy2(self.paths.output_env, self.paths.base_env)
+        shutil.copy2(self.paths.output_compose, active_compose)
+        shutil.copy2(self.paths.output_env, active_env)
 
-        self._run_compose_stack(
-            compose_path=self.paths.base_compose,
-            env_path=self.paths.base_env,
+        self._start_services_with_jitter(
+            compose_path=active_compose,
+            env_path=active_env,
             project_name=deployment.project_name,
-            action="up",
-            extra_args=["-d"],
+            service_names=list(deployment.compose_data["services"]),
         )
 
     def _backup_active_tpot_files(self) -> None:
-        if self.paths.base_compose.exists():
+        active_compose = self._get_active_compose_path()
+        active_env = self._get_active_env_path()
+        backup_compose = self._get_backup_compose_path()
+        backup_env = self._get_backup_env_path()
+        active_env_values = self._load_env_file(active_env)
+        preserve_existing_backups = (
+            "DEEPPRINT_PERSONA" in active_env_values
+            and backup_compose.exists()
+            and backup_env.exists()
+        )
+
+        if active_compose.exists() and not preserve_existing_backups:
             shutil.copy2(
-                self.paths.base_compose,
-                self._get_backup_compose_path(),
+                active_compose,
+                backup_compose,
             )
-        if self.paths.base_env.exists():
+        if active_env.exists() and not preserve_existing_backups:
             shutil.copy2(
-                self.paths.base_env,
-                self._get_backup_env_path(),
+                active_env,
+                backup_env,
             )
 
     def _get_backup_compose_path(self) -> Path:
-        return self.paths.base_compose.with_name(
-            f"{self.paths.base_compose.name}.deepprint.bak"
-        )
+        active_compose = self._get_active_compose_path()
+        return active_compose.with_name(f"{active_compose.name}.deepprint.bak")
 
     def _get_backup_env_path(self) -> Path:
-        return self.paths.base_env.with_name(".env.deepprint.bak")
+        return self._get_active_env_path().with_name(".env.deepprint.bak")
+
+    def _get_active_compose_path(self) -> Path:
+        if self.paths.tpot_root is None:
+            return self.paths.base_compose
+        return self.paths.tpot_root / "docker-compose.yml"
+
+    def _get_active_env_path(self) -> Path:
+        if self.paths.tpot_root is None:
+            return self.paths.base_env
+        return self.paths.tpot_root / ".env"
 
     def _get_project_name(self, env_path: Path) -> str:
         env_values = self._load_env_file(env_path)
@@ -315,6 +348,43 @@ class DeepPrintEngine:
         if extra_args:
             compose_args.extend(extra_args)
         self._run_docker(compose_args)
+
+    def _start_services_with_jitter(
+        self,
+        compose_path: Path,
+        env_path: Path,
+        project_name: str,
+        service_names: list[str],
+    ) -> None:
+        ordered_services = [str(service_name) for service_name in service_names]
+        total_services = len(ordered_services)
+        for index, service_name in enumerate(ordered_services, start=1):
+            print(
+                f"DeepPrint starting service {service_name} "
+                f"({index}/{total_services})."
+            )
+            self._run_compose_stack(
+                compose_path=compose_path,
+                env_path=env_path,
+                project_name=project_name,
+                action="up",
+                extra_args=["-d", service_name],
+            )
+            if index < total_services:
+                delay_seconds = self._random_startup_delay_seconds()
+                print(
+                    "DeepPrint pausing "
+                    f"{delay_seconds:.1f}s before the next service to keep reboot "
+                    "timing less synthetic."
+                )
+                time.sleep(delay_seconds)
+
+    @staticmethod
+    def _random_startup_delay_seconds() -> float:
+        return random.uniform(
+            STARTUP_DELAY_MIN_SECONDS,
+            STARTUP_DELAY_MAX_SECONDS,
+        )
 
     def _materialize_injection_source(
         self,
@@ -359,9 +429,35 @@ class DeepPrintEngine:
             self._compose_env_reference,
         )
 
+        requested_mac = read_optional_text(service_override.get("mac_address"))
+        requested_mac_prefix = read_optional_text(
+            service_override.get("mac_address_prefix")
+        )
+        if requested_mac and requested_mac_prefix:
+            raise DeepPrintError(
+                f"Service '{service_name}' cannot define both mac_address and "
+                "mac_address_prefix."
+            )
+        if requested_mac or requested_mac_prefix:
+            if uses_host_network(service_definition):
+                raise DeepPrintError(
+                    f"Service '{service_name}' uses network_mode: host and cannot "
+                    "receive a DeepPrint MAC address override."
+                )
+            final_mac_address = (
+                normalize_mac_address(requested_mac)
+                if requested_mac
+                else generate_mac_address_from_prefix(requested_mac_prefix or "")
+            )
+            service_definition["mac_address"] = final_mac_address
+        else:
+            final_mac_address = read_optional_text(service_definition.get("mac_address"))
+
         env_prefix = f"DEEPPRINT_{service_name.upper()}"
         generated_env[f"{env_prefix}_HOSTNAME"] = service_definition["hostname"]
         generated_env[f"{env_prefix}_CONTAINER_NAME"] = final_container_name
+        if final_mac_address:
+            generated_env[f"{env_prefix}_MAC_ADDRESS"] = final_mac_address
         for key, value in env_overrides.items():
             generated_env[f"{env_prefix}_{str(key).upper()}"] = str(value)
 
@@ -569,6 +665,20 @@ class DeepPrintEngine:
                     "environment_variables as a mapping."
                 )
 
+            mac_address = read_optional_text(service_config.get("mac_address"))
+            mac_address_prefix = read_optional_text(
+                service_config.get("mac_address_prefix")
+            )
+            if mac_address and mac_address_prefix:
+                raise DeepPrintError(
+                    f"Service '{service_name}' in persona '{persona_name}' cannot define "
+                    "both mac_address and mac_address_prefix."
+                )
+            if mac_address and not contains_template_placeholder(mac_address):
+                normalize_mac_address(mac_address)
+            if mac_address_prefix and not contains_template_placeholder(mac_address_prefix):
+                normalize_mac_address_prefix(mac_address_prefix)
+
         if not isinstance(persona_data["files_to_inject"], list):
             raise DeepPrintError(
                 f"Persona '{persona_name}' must define files_to_inject as a list."
@@ -642,11 +752,14 @@ class DeepPrintEngine:
             line = raw_line.strip()
             if not line or line.startswith("#"):
                 continue
-            if "=" not in line:
+            if "=" in line:
+                key, value = line.split("=", 1)
+            elif ":" in line:
+                key, value = line.split(":", 1)
+            else:
                 raise DeepPrintError(
                     f"Invalid env entry in {path} at line {line_number}: {raw_line}"
                 )
-            key, value = line.split("=", 1)
             env_values[key.strip()] = value.strip()
         return env_values
 
@@ -816,6 +929,10 @@ def render_template_string(template: str | None, context: dict[str, str]) -> str
     )
 
 
+def contains_template_placeholder(value: str) -> bool:
+    return bool(PLACEHOLDER_PATTERN.search(value))
+
+
 def render_text_file_if_possible(path: Path, context: dict[str, str]) -> str | None:
     try:
         content = path.read_text(encoding="utf-8")
@@ -830,6 +947,60 @@ def build_hostname(global_prefix: str, hostname: str) -> str:
     host = sanitize_hostname(hostname)
     combined = f"{prefix}-{host}" if host else prefix
     return sanitize_hostname(combined)
+
+
+def read_optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def normalize_mac_address(raw_mac_address: str) -> str:
+    candidate = raw_mac_address.strip().lower().replace("-", ":")
+    if not MAC_ADDRESS_PATTERN.fullmatch(candidate):
+        raise DeepPrintError(
+            f"Invalid MAC address '{raw_mac_address}'. Expected six octets such as "
+            "00:11:22:33:44:55."
+        )
+
+    first_octet = int(candidate.split(":", 1)[0], 16)
+    if first_octet & 1:
+        raise DeepPrintError(
+            f"Invalid MAC address '{raw_mac_address}'. Multicast MAC addresses are "
+            "not valid for container identities."
+        )
+
+    return candidate
+
+
+def normalize_mac_address_prefix(raw_prefix: str) -> str:
+    candidate = raw_prefix.strip().lower().replace("-", ":")
+    if not MAC_PREFIX_PATTERN.fullmatch(candidate):
+        raise DeepPrintError(
+            f"Invalid MAC prefix '{raw_prefix}'. Expected the first three octets "
+            "such as 00:11:22."
+        )
+
+    first_octet = int(candidate.split(":", 1)[0], 16)
+    if first_octet & 1:
+        raise DeepPrintError(
+            f"Invalid MAC prefix '{raw_prefix}'. Multicast prefixes are not valid "
+            "for container identities."
+        )
+
+    return candidate
+
+
+def generate_mac_address_from_prefix(raw_prefix: str) -> str:
+    prefix = normalize_mac_address_prefix(raw_prefix)
+    suffix = [f"{random.randint(0, 255):02x}" for _ in range(3)]
+    return ":".join([prefix, *suffix])
+
+
+def uses_host_network(service_definition: dict[str, Any]) -> bool:
+    network_mode = str(service_definition.get("network_mode", "")).strip().lower()
+    return network_mode == "host"
 
 
 def sanitize_hostname(raw_hostname: str) -> str:
@@ -1118,10 +1289,8 @@ def build_runtime_paths(args: argparse.Namespace) -> RuntimePaths:
     root = Path(__file__).resolve().parent
     templates_dir = root / "templates"
     tpot_root = args.tpot_root.expanduser().resolve() if args.tpot_root else None
-    default_base_compose = (
-        tpot_root / "docker-compose.yml" if tpot_root else templates_dir / "tpot.yml"
-    )
-    default_base_env = tpot_root / ".env" if tpot_root else templates_dir / ".env"
+    default_base_compose = templates_dir / "tpot.yml"
+    default_base_env = templates_dir / ".env"
     default_output_compose = (
         tpot_root / "docker-compose.deepprint.yml"
         if tpot_root

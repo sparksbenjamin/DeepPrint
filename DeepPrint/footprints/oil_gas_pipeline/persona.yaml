@@ -1,5 +1,4 @@
 global_prefix: redmesa
-
 services:
   cowrie:
     hostname: compressor-station-jump
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: RM-PIPE-OPS01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: pipeline-ops
-
   conpot:
     hostname: compressor-plc
     container_name: redmesa-compressor-plc
     environment_variables:
-      CONPOT_TEMPLATE: pipeline
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens S7 Compressor Controller
       PLC_SITE_NAME: Red Mesa Pipeline District
       PLC_PROCESS_AREA: Compressor Station 4
-
   suricata:
     hostname: line-sensor
     container_name: redmesa-pipeline-ids
     environment_variables:
       SURICATA_SENSOR_NAME: REDMESA-LINE-SENSOR
       SENSOR_ROLE: pipeline-perimeter
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

@@ -1,5 +1,4 @@
 global_prefix: northgrid
-
 services:
   cowrie:
     hostname: relay-engineering-jump
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: NG-SUB-ENG01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: relay-engineering
-
   conpot:
     hostname: breaker-control-plc
     container_name: northgrid-breaker-plc
     environment_variables:
-      CONPOT_TEMPLATE: substation
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens SICAM Breaker Controller
       PLC_SITE_NAME: NorthGrid Substation 18
       PLC_PROCESS_AREA: 230kV Breaker Lineup B
-
   suricata:
     hostname: substation-sensor
     container_name: northgrid-substation-ids
     environment_variables:
       SURICATA_SENSOR_NAME: NORTHGRID-SUB18-SENSOR
       SENSOR_ROLE: substation-perimeter
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

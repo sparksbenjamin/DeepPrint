@@ -2,34 +2,57 @@ version: "3.8"
 
 services:
   cowrie:
-    image: ghcr.io/telekom-security/cowrie:latest
+    image: ghcr.io/telekom-security/cowrie:24.04.1
     restart: unless-stopped
+    tmpfs:
+      - /tmp/cowrie:uid=2000,gid=2000
+      - /tmp/cowrie/data:uid=2000,gid=2000
     ports:
-      - "2222:2222"
+      - "2222:22"
+      - "2323:23"
     environment:
       COWRIE_TELNET_ENABLED: "true"
       COWRIE_MOTD_PATH: /etc/motd
+    volumes:
+      - ./data/cowrie/downloads:/home/cowrie/cowrie/dl
+      - ./data/cowrie/keys:/home/cowrie/cowrie/etc
+      - ./data/cowrie/log:/home/cowrie/cowrie/log
+      - ./data/cowrie/log/tty:/home/cowrie/cowrie/log/tty
     networks:
       - tpot
 
   conpot:
-    image: ghcr.io/telekom-security/conpot:latest
+    image: ghcr.io/telekom-security/conpot:24.04.1
     restart: unless-stopped
+    tmpfs:
+      - /tmp/conpot:uid=2000,gid=2000
     ports:
       - "102:102"
-      - "8080:8080"
+      - "8080:80"
     environment:
+      CONPOT_CONFIG: /etc/conpot/conpot.cfg
+      CONPOT_JSON_LOG: /var/log/conpot/conpot.json
+      CONPOT_LOG: /var/log/conpot/conpot.log
+      CONPOT_TMP: /tmp/conpot
       CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: generic-controller
+    volumes:
+      - ./data/conpot/log:/var/log/conpot
     networks:
       - tpot
 
   suricata:
-    image: ghcr.io/telekom-security/suricata:latest
+    image: ghcr.io/telekom-security/suricata:24.04.1
     restart: unless-stopped
     network_mode: host
+    cap_add:
+      - NET_ADMIN
+      - SYS_NICE
+      - NET_RAW
     environment:
       SURICATA_SENSOR_NAME: baseline-sensor
+    volumes:
+      - ./data/suricata/log:/var/log/suricata
 
 networks:
   tpot:

@@ -1,5 +1,4 @@
 global_prefix: metrolink
-
 services:
   cowrie:
     hostname: dispatch-admin-console
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: ML-RAIL-DISP01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: dispatch-admin
-
   conpot:
     hostname: interlocking-plc-east
     container_name: metrolink-interlocking-plc
     environment_variables:
-      CONPOT_TEMPLATE: rail
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens Rail Interlocking Controller
       PLC_SITE_NAME: MetroLink Operations Center
       PLC_PROCESS_AREA: East Junction Interlocking
-
   suricata:
     hostname: signaling-sensor
     container_name: metrolink-rail-ids
     environment_variables:
       SURICATA_SENSOR_NAME: METROLINK-RAIL-SENSOR
       SENSOR_ROLE: signaling-core
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

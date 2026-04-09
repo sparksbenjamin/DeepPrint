@@ -1,5 +1,4 @@
 global_prefix: northbridge
-
 services:
   cowrie:
     hostname: radiology-bastion
@@ -8,27 +7,24 @@ services:
       COWRIE_HOSTNAME: NBH-RAD-ADMIN01
       COWRIE_MOTD_PATH: /etc/motd
       DECEPTION_ROLE: biomedical-admin
-
   conpot:
     hostname: ct-scanner-plc
     container_name: northbridge-ct-gateway
     environment_variables:
-      CONPOT_TEMPLATE: imaging
+      CONPOT_TEMPLATE: default
       CONPOT_DEVICE_NAME: Siemens SOMATOM Control PLC
       PLC_SITE_NAME: Northbridge Medical Center
       PLC_PROCESS_AREA: Imaging Suite 3
-
   suricata:
     hostname: biomed-sensor
     container_name: northbridge-biomed-ids
     environment_variables:
       SURICATA_SENSOR_NAME: NORTHBRIDGE-BIOMED
       SENSOR_ROLE: biomedical-east-west
-
 files_to_inject:
-  - service: cowrie
-    source: assets/motd.txt
-    destination: /etc/motd
-  - service: conpot
-    source: assets/web.config
-    destination: /opt/conpot/conpot/templates/default/http/web.config
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html

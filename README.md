@@ -1,14 +1,15 @@
 # DeepPrint
 
-DeepPrint is a Python deployment framework for re-skinning a
+DeepPrint is a Python-based Deception Engineering deployment framework for re-skinning a
 [T-Pot](https://github.com/telekom-security/tpotce) installation into a chosen
 operational persona. It generates a persona-specific Docker Compose manifest,
-sets explicit hostnames and container names, updates environment values, and
-can inject banner and content files into running honeypot containers.
+sets explicit hostnames and container names, updates environment values,
+optionally assigns vendor-aligned MAC identities, and can inject banner and
+content files into running honeypot containers.
 
 The goal is simple: land on a T-Pot host, run one command, choose a persona,
 and deploy a more believable deception footprint without hand-editing Compose
-files, environment variables, and banner assets by hand.
+files, environment variables, banner assets, and service metadata by hand.
 
 ## Why Use DeepPrint With T-Pot
 
@@ -17,9 +18,15 @@ still look generic. DeepPrint makes a T-Pot install more useful during
 deception-oriented deployments by helping it look intentional rather than
 stock.
 
+DeepPrint is specifically meant to increase attacker friction. The more
+consistent and believable the environment looks, the more work an attacker has
+to do to separate the deception from a real operational target.
+
 In practice, that means:
 
 - more believable hostnames and service identities
+- more believable reboot behavior through staggered service startup
+- optional MAC address randomization that can preserve a vendor OUI when needed
 - consistent persona data across containers, banners, and injected files
 - faster deployment for operators who do not want to hand-tune YAML on-host
 - safer changes through preview mode, backups, and restore support
@@ -29,8 +36,12 @@ In practice, that means:
 - Applies a persona to T-Pot services such as `cowrie`, `conpot`, and `suricata`
 - Forces explicit `hostname` values in Compose so Docker does not assign random IDs
 - Updates environment variables to reflect the selected identity
+- Can set a full `mac_address` or randomize the last three octets from a
+  supplied vendor prefix for bridged services
 - Supports prompted values for banners, hostnames, site names, and other persona data
-- Injects local files like `motd.txt` or `web.config` into running containers
+- Injects local files like `motd.txt` or `index.html` into running containers
+- Starts services with small randomized delays during live deployment and restore
+  so reboot traffic looks less synthetic
 - Supports both preview mode and live deployment mode
 - Can operate directly against a live `~/tpotce` installation
 
@@ -154,6 +165,13 @@ Deploy directly to a live T-Pot host:
 python3 DeepPrint/deepprint.py --deploy power_plant --tpot-root ~/tpotce
 ```
 
+If your host is using `tpot.service` to supervise the stack, stop it before a
+manual DeepPrint cutover:
+
+```bash
+sudo systemctl stop tpot
+```
+
 Restore the previous live T-Pot configuration from DeepPrint backup files:
 
 ```bash
@@ -174,6 +192,8 @@ active T-Pot installation and will:
    - `docker-compose.yml`
    - `.env`
 5. Start the updated stack
+   - DeepPrint starts services incrementally with small randomized pauses so a
+     persona swap looks more like a real reboot event on the network
 6. Inject persona assets into the running containers with `docker cp`
 
 It also writes:
@@ -217,6 +237,7 @@ Typical prompted values include:
 - site name
 - hostname prefixes
 - SSH banner hostnames
+- optional MAC vendor prefixes for bridged services
 - IDS sensor names
 - warning text
 - operations contact names
@@ -230,7 +251,7 @@ contains:
 
 - `persona.yaml`
 - `assets/motd.txt`
-- `assets/web.config`
+- `assets/index.html`
 
 Example:
 
@@ -259,6 +280,15 @@ files_to_inject:
 
 DeepPrint validates required keys and will fail fast on missing or malformed
 persona data.
+
+For deception-focused environments where MAC identity matters, personas may
+also define:
+
+- `mac_address`
+  Set a full static MAC address for a bridged container.
+- `mac_address_prefix`
+  Supply the first three octets and let DeepPrint randomize the suffix per
+  deployment.
 
 For a full step-by-step custom persona guide, see
 [DeepPrint/CUSTOM_PERSONAS.md](DeepPrint/CUSTOM_PERSONAS.md).
@@ -322,6 +352,8 @@ usage: deepprint.py [-h] [--deploy PERSONA] [--list-personas] [--restore]
 ## Safety Notes
 
 - DeepPrint is intended for controlled lab, deception, and research use.
+- It is a Deception Engineering tool meant to increase attacker friction, not
+  to silently impersonate production assets outside approved environments.
 - Review the generated Compose and env files before exposing a host.
 - If you are deploying to a live T-Pot installation, treat this as a stack
   reconfiguration and schedule appropriately.
