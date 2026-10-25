@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+import errno
+import io
 import os
 import shutil
 import sys
@@ -259,6 +262,241 @@ class BootstrapUpdateTests(unittest.TestCase):
             ):
                 self.assertEqual(0, bootstrap.main())
             self.assertTrue((install_root / "DeepPrint" / "deepprint.py").exists())
+
+
+    def _seed_deploy_data(self, install_root: Path) -> Path:
+        """Write the docker-created data dirs a default deploy leaves behind."""
+        suricata = install_root / "DeepPrint" / "data" / "suricata" / "log"
+        suricata.mkdir(parents=True)
+        (suricata / "eve.json").write_text('{"events": []}\n')
+        honeytrap = install_root / "DeepPrint" / "data" / "honeytrap" / "attacks"
+        honeytrap.mkdir(parents=True)
+        (honeytrap / "attacks.log").write_text("captured\n")
+        return suricata
+
+    def _undeletable_rmtree_patch(self, marker: str):
+        """Simulate a docker-created root-owned dir rmtree cannot remove.
+
+        The default deploy runs the Compose project from the package
+        directory, so `./data/...` bind-mount sources land inside the
+        install root-owned; a non-root updater can neither scandir them nor
+        chmod them, and shutil.rmtree aborts with
+        `[Errno 1] Operation not permitted`.
+        """
+        real_rmtree = shutil.rmtree
+
+        def undeletable_rmtree(path, *args, **kwargs):
+            if Path(path).exists() and any(
+                marker in str(child) for child in Path(path).rglob("*")
+            ):
+                raise OSError(1, "Operation not permitted", str(path))
+            return real_rmtree(path, *args, **kwargs)
+
+        return patch.object(bootstrap.shutil, "rmtree", side_effect=undeletable_rmtree)
+
+    def test_update_carries_deploy_data_across_swap(self) -> None:
+        """T-Pot data dirs under DeepPrint/data/ survive an update."""
+        with tempfile.TemporaryDirectory(prefix="deepprint-upd-") as temp_dir:
+            base = Path(temp_dir)
+            repo = self._fixture_repo(base)
+            newer = self._fixture_repo(base, name="newer")
+            newer.joinpath("DeepPrint", "deepprint.py").write_text(
+                newer.joinpath("DeepPrint", "deepprint.py").read_text()
+                + "\n# upstream rev 2\n"
+            )
+            install_root = base / ".deepprint"
+            with patch.object(bootstrap, "INSTALL_ROOT", install_root):
+                bootstrap.install_repo(repo)
+                self._seed_runtime_state(install_root)
+                self._seed_deploy_data(install_root)
+                with patch.dict(
+                    os.environ, {"DEEPPRINT_BOOTSTRAP_SOURCE": str(newer)}
+                ):
+                    result, changed = bootstrap.update_install()
+            self.assertTrue(changed)
+            self.assertIn(
+                "# upstream rev 2",
+                (result / "DeepPrint" / "deepprint.py").read_text(),
+            )
+            self.assertEqual(
+                '{"events": []}\n',
+                (
+                    result
+                    / "DeepPrint"
+                    / "data"
+                    / "suricata"
+                    / "log"
+                    / "eve.json"
+                ).read_text(),
+            )
+            self.assertTrue(
+                (
+                    result / "DeepPrint" / "data" / "honeytrap" / "attacks"
+                ).is_dir()
+            )
+            self._assert_runtime_state_preserved(result)
+            # The swap left no leftover trees behind.
+            self.assertEqual([], list(base.glob(".deepprint-retired-*")))
+
+    def test_deploy_data_does_not_force_reinstall(self) -> None:
+        """Docker data inside the install must not look like a source change."""
+        with tempfile.TemporaryDirectory(prefix="deepprint-upd-") as temp_dir:
+            base = Path(temp_dir)
+            repo = self._fixture_repo(base)
+            install_root = base / ".deepprint"
+            with patch.object(bootstrap, "INSTALL_ROOT", install_root):
+                bootstrap.install_repo(repo)
+                self._seed_deploy_data(install_root)
+                with patch.dict(
+                    os.environ, {"DEEPPRINT_BOOTSTRAP_SOURCE": str(repo)}
+                ):
+                    _, changed = bootstrap.update_install()
+            self.assertFalse(changed)
+            self.assertTrue(
+                (
+                    install_root
+                    / "DeepPrint"
+                    / "data"
+                    / "suricata"
+                    / "log"
+                    / "eve.json"
+                ).exists()
+            )
+
+    def test_update_survives_undeletable_suricata_data(self) -> None:
+        """The reported crash: rmtree of data/suricata/log hits EPERM.
+
+        A docker-created root-owned bind-mount source under
+        DeepPrint/data/suricata/log used to abort the whole update with
+        `[Errno 1] Operation not permitted`. The data dir is never
+        deleted, overwritten, or moved by the swap.
+        """
+        with tempfile.TemporaryDirectory(prefix="deepprint-upd-") as temp_dir:
+            base = Path(temp_dir)
+            repo = self._fixture_repo(base)
+            newer = self._fixture_repo(base, name="newer")
+            newer.joinpath("DeepPrint", "deepprint.py").write_text(
+                newer.joinpath("DeepPrint", "deepprint.py").read_text()
+                + "\n# upstream rev 2\n"
+            )
+            install_root = base / ".deepprint"
+            with patch.object(bootstrap, "INSTALL_ROOT", install_root):
+                bootstrap.install_repo(repo)
+                self._seed_runtime_state(install_root)
+                self._seed_deploy_data(install_root)
+                with patch.dict(
+                    os.environ, {"DEEPPRINT_BOOTSTRAP_SOURCE": str(newer)}
+                ), self._undeletable_rmtree_patch("suricata"):
+                    result, changed = bootstrap.update_install()
+            self.assertTrue(changed)
+            self.assertIn(
+                "# upstream rev 2",
+                (result / "DeepPrint" / "deepprint.py").read_text(),
+            )
+            self.assertEqual(
+                '{"events": []}\n',
+                (
+                    result
+                    / "DeepPrint"
+                    / "data"
+                    / "suricata"
+                    / "log"
+                    / "eve.json"
+                ).read_text(),
+            )
+            self._assert_runtime_state_preserved(result)
+            self.assertEqual([], list(base.glob(".deepprint-retired-*")))
+
+    def test_update_leaves_unmovable_deploy_data_in_place(self) -> None:
+        """Docker data is unmovable, not just undeletable: EACCES on rename.
+
+        Moving a directory to a different parent needs write permission on
+        the directory itself (the kernel updates `..`), so a root-owned
+        mode-0700 data dir raises EACCES on os.rename. A design that
+        carries the data dir across the swap can never work; the update
+        must leave it exactly where it is and swap everything else around
+        it. Guard: any rename touching deploy data fails this test.
+        """
+        with tempfile.TemporaryDirectory(prefix="deepprint-upd-") as temp_dir:
+            base = Path(temp_dir)
+            repo = self._fixture_repo(base)
+            newer = self._fixture_repo(base, name="newer")
+            newer.joinpath("DeepPrint", "deepprint.py").write_text(
+                newer.joinpath("DeepPrint", "deepprint.py").read_text()
+                + "\n# upstream rev 2\n"
+            )
+            install_root = base / ".deepprint"
+            real_rename = os.rename
+
+            def deny_data_renames(source, target):
+                if Path(source).name in bootstrap.DEPLOY_DATA_DIRS:
+                    raise PermissionError(
+                        errno.EACCES, "Permission denied (unmovable dir)"
+                    )
+                return real_rename(source, target)
+
+            with patch.object(bootstrap, "INSTALL_ROOT", install_root):
+                bootstrap.install_repo(repo)
+                self._seed_runtime_state(install_root)
+                self._seed_deploy_data(install_root)
+                with patch.dict(
+                    os.environ, {"DEEPPRINT_BOOTSTRAP_SOURCE": str(newer)}
+                ), patch.object(bootstrap.os, "rename", deny_data_renames):
+                    result, changed = bootstrap.update_install()
+            self.assertTrue(changed)
+            self.assertIn(
+                "# upstream rev 2",
+                (result / "DeepPrint" / "deepprint.py").read_text(),
+            )
+            self.assertEqual(
+                '{"events": []}\n',
+                (
+                    result
+                    / "DeepPrint"
+                    / "data"
+                    / "suricata"
+                    / "log"
+                    / "eve.json"
+                ).read_text(),
+            )
+            self._assert_runtime_state_preserved(result)
+            self.assertEqual([], list(base.glob(".deepprint-retired-*")))
+
+    def test_update_survives_undeletable_stale_entry(self) -> None:
+        """An undeletable stale entry warns and stays put; the update lands."""
+        with tempfile.TemporaryDirectory(prefix="deepprint-upd-") as temp_dir:
+            base = Path(temp_dir)
+            repo = self._fixture_repo(base)
+            newer = self._fixture_repo(base, name="newer")
+            newer.joinpath("DeepPrint", "deepprint.py").write_text(
+                newer.joinpath("DeepPrint", "deepprint.py").read_text()
+                + "\n# upstream rev 2\n"
+            )
+            install_root = base / ".deepprint"
+            with patch.object(bootstrap, "INSTALL_ROOT", install_root):
+                bootstrap.install_repo(repo)
+                self._seed_runtime_state(install_root)
+                evil = install_root / "DeepPrint" / "evil_root_dir"
+                evil.mkdir()
+                (evil / "stuck.log").write_text("stuck\n")
+                stderr = io.StringIO()
+                with patch.dict(
+                    os.environ, {"DEEPPRINT_BOOTSTRAP_SOURCE": str(newer)}
+                ), self._undeletable_rmtree_patch("evil_root_dir"), (
+                    contextlib.redirect_stderr(stderr)
+                ):
+                    result, changed = bootstrap.update_install()
+            self.assertTrue(changed)
+            self.assertIn(
+                "# upstream rev 2",
+                (result / "DeepPrint" / "deepprint.py").read_text(),
+            )
+            # The new install landed; the stuck entry is warned about and
+            # left in place rather than aborting the swap.
+            self.assertIn("could not remove", stderr.getvalue())
+            self.assertIn("evil_root_dir", stderr.getvalue())
+            self.assertTrue(evil.exists())
+            self._assert_runtime_state_preserved(result)
 
 
 if __name__ == "__main__":

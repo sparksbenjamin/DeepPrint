@@ -13,10 +13,13 @@ The updater refreshes the installed sources (personas, base Compose
 templates, engine, bootstrap itself, and update.sh) from the same GitHub
 ref used at install time, then re-applies the saved deployment with the
 engine's --update mode. Runtime files written by previous deploys (the
-deployment state, the state pointer, and the default rendered outputs)
-and any custom personas under DeepPrint/footprints/ are carried across
-the refresh, so updating never orphans or deletes an existing
-deployment.
+deployment state, the state pointer, and the default rendered outputs),
+T-Pot runtime data directories under DeepPrint/data/ (root-owned
+Compose bind-mount sources on default deploys), and any custom personas
+under DeepPrint/footprints/ survive the refresh, so updating never
+orphans, deletes, or breaks an existing deployment. Runtime data is left
+exactly where it is: docker owns it, the updating user cannot move or
+remove it, and bind mounts keep following the same inode.
 """
 from __future__ import annotations
 
@@ -56,6 +59,14 @@ PRESERVED_RUNTIME_FILES = (
     ".deepprint_rendered",
 )
 
+# Deploy-time data directories the T-Pot Compose project creates inside the
+# package tree. Default deploys run the Compose project from the package
+# directory, so `./data/...` bind-mount sources land under DeepPrint/data/.
+# Docker creates them root-owned (often while containers hold them mounted),
+# so updates leave them exactly where they are instead of trying to delete,
+# overwrite, or move them.
+DEPLOY_DATA_DIRS = ("data",)
+
 
 def ensure_pyyaml() -> None:
     try:
@@ -92,6 +103,25 @@ def _handle_remove_readonly(func, path, exc_info) -> None:
 def safe_rmtree(path: Path) -> None:
     if path.exists():
         shutil.rmtree(path, onerror=_handle_remove_readonly)
+
+
+def _move_or_copy(source: Path, target: Path) -> None:
+    """Relocate a preserved artifact into the staged tree.
+
+    A rename keeps ownership, permissions, and any live bind mounts exactly
+    as deployed (and works for docker-owned entries a non-root updater could
+    not read back); the copy fallback covers staging roots that somehow
+    ended up on another filesystem.
+    """
+    try:
+        os.rename(source, target)
+        return
+    except OSError:
+        pass
+    if source.is_dir():
+        shutil.copytree(source, target)
+    else:
+        shutil.copy2(source, target)
 
 
 def find_repo_root(base_dir: Path) -> Path:
@@ -161,10 +191,14 @@ def _preserve_runtime_files(current_package: Path, staged_package: Path) -> None
         if not source.exists():
             continue
         target = staged_package / name
-        if source.is_dir():
-            shutil.copytree(source, target)
-        else:
-            shutil.copy2(source, target)
+        if target.exists():
+            # Staged trees never ship these names; if one does, the staged
+            # version wins. Clear the way before moving the deployed file in.
+            if target.is_dir():
+                safe_rmtree(target)
+            else:
+                target.unlink()
+        _move_or_copy(source, target)
 
 
 def _preserve_custom_footprints(current_package: Path, staged_package: Path) -> None:
@@ -182,19 +216,105 @@ def _preserve_custom_footprints(current_package: Path, staged_package: Path) -> 
             # Upstream ships this persona path: the released version wins.
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(source, target)
+        _move_or_copy(source, target)
+
+
+def _warn_problem(problem: str | None) -> None:
+    if problem:
+        print(f"WARNING: {problem}", file=sys.stderr)
+
+
+def _remove_entry(entry: Path) -> str | None:
+    """Delete an installed entry, best-effort; returns a problem or None."""
+    try:
+        if entry.is_dir() and not entry.is_symlink():
+            safe_rmtree(entry)
+        else:
+            entry.unlink()
+    except OSError as exc:
+        return (
+            f"could not remove {entry} ({exc}); it was left in place -- "
+            "remove it manually once the update is verified"
+        )
+    return None
+
+
+def _replace_entry(source: Path, target: Path) -> str | None:
+    """Move one staged entry over its installed counterpart, best-effort.
+
+    The swap happens one entry at a time (rather than replacing the whole
+    tree) precisely so that individual docker-owned leftovers degrade into
+    a warning instead of aborting the update.
+    """
+    if target.exists() or target.is_symlink():
+        problem = _remove_entry(target)
+        if problem:
+            return f"{problem} (the installed entry was kept as-is)"
+    try:
+        os.rename(source, target)
+    except OSError as exc:
+        return f"could not install {target} ({exc})"
+    return None
 
 
 def _swap_install(staging_root: Path) -> Path:
-    """Replace the install at INSTALL_ROOT with the staged tree."""
+    """Replace the install at INSTALL_ROOT with the staged tree, in place.
+
+    T-Pot runtime data under DeepPrint/data/ is docker-owned (root, often
+    mode 0700 while containers hold it mounted): the updating user cannot
+    delete it, read it, or even rename it across directories (moving a
+    directory requires write permission on the directory itself). So the
+    data dirs are never touched -- staged entries are moved over their
+    installed counterparts one by one, around the data dirs. Everything
+    stays on the same filesystem and on the same path, so live bind mounts
+    and the recorded tpot-root path remain valid. Any other entry that
+    cannot be replaced produces a warning instead of aborting.
+    """
     install_root = INSTALL_ROOT.resolve()
+    if install_root.exists() and not install_root.is_dir():
+        install_root.unlink()
+    install_root.mkdir(parents=True, exist_ok=True)
     current_package = install_root / "DeepPrint"
-    if current_package.is_dir():
-        _preserve_runtime_files(current_package, staging_root / "DeepPrint")
-        _preserve_custom_footprints(current_package, staging_root / "DeepPrint")
-    if install_root.exists():
-        safe_rmtree(install_root)
-    staging_root.replace(install_root)
+    staged_package = staging_root / "DeepPrint"
+    if current_package.is_dir() and staged_package.is_dir():
+        _preserve_runtime_files(current_package, staged_package)
+        _preserve_custom_footprints(current_package, staged_package)
+    current_package.mkdir(parents=True, exist_ok=True)
+
+    staged_top = {entry.name for entry in staging_root.iterdir()}
+    for entry in sorted(staging_root.iterdir()):
+        if entry.name == "DeepPrint":
+            continue
+        _warn_problem(_replace_entry(entry, install_root / entry.name))
+
+    if staged_package.is_dir():
+        staged_package_names = {entry.name for entry in staged_package.iterdir()}
+        for entry in sorted(staged_package.iterdir()):
+            if entry.name in DEPLOY_DATA_DIRS:
+                # Docker-owned runtime data: never deleted, never
+                # overwritten, never moved. A bind mount follows the
+                # inode, so the running stack keeps its data and the
+                # recorded tpot-root path stays valid.
+                continue
+            _warn_problem(_replace_entry(entry, current_package / entry.name))
+    else:
+        staged_package_names = set()
+
+    # Prune installed entries that no longer ship upstream. Runtime data
+    # dirs are exempt, and preserved artifacts were already moved into the
+    # staged tree, so they appear in the staged listings above.
+    keep_top = staged_top | {"DeepPrint"}
+    for entry in sorted(install_root.iterdir()):
+        if entry.name in keep_top:
+            continue
+        _warn_problem(_remove_entry(entry))
+    keep_package = staged_package_names | set(DEPLOY_DATA_DIRS)
+    for entry in sorted(current_package.iterdir()):
+        if entry.name in keep_package:
+            continue
+        _warn_problem(_remove_entry(entry))
+
+    _warn_problem(_remove_entry(staging_root))
     return install_root
 
 
@@ -215,6 +335,11 @@ def _is_comparison_ignorable(relative_path: str) -> bool:
         PRESERVED_RUNTIME_FILES
     ):
         return True
+    # T-Pot runtime data (Compose bind-mount sources on default deploys)
+    # sits under DeepPrint/data/, is docker-owned, and stays exactly where
+    # it is across updates; it never counts as a source change.
+    if len(parts) >= 2 and parts[0] == "DeepPrint" and parts[1] in DEPLOY_DATA_DIRS:
+        return True
     return False
 
 
@@ -226,7 +351,13 @@ def _tree_digests(root: Path) -> dict[str, str]:
         relative = path.relative_to(root).as_posix()
         if _is_comparison_ignorable(relative):
             continue
-        digests[relative] = hashlib.sha256(path.read_bytes()).hexdigest()
+        try:
+            content = path.read_bytes()
+        except OSError:
+            # Unreadable runtime artifacts (docker-owned files) cannot be
+            # compared; never let one abort the update check.
+            continue
+        digests[relative] = hashlib.sha256(content).hexdigest()
     return digests
 
 
