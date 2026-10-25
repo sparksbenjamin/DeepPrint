@@ -7,6 +7,7 @@
 #
 #   ./update.sh                        # inside a git clone of DeepPrint
 #   sh ~/.deepprint/update.sh          # inside a bootstrap (zip) install
+#   sh update.sh                       # fetched standalone; finds ~/.deepprint
 #
 # Useful variants:
 #   ./update.sh --dry-run   # pull updates, then preview the re-render only
@@ -17,6 +18,12 @@
 # the run. Bootstrap installs (curl ... | python3 -) have no git history, so
 # they download the latest release zip and swap it in place, preserving the
 # saved deployment state and any custom personas.
+#
+# Standalone runs (script fetched on its own, on any machine) fall back to the
+# bootstrap install at $DEEPPRINT_HOME (default ~/.deepprint). Installs made
+# by the legacy bootstrap — before it learned to self-update — get the current
+# bootstrap fetched and run against the existing install, so they upgrade in
+# place too instead of being wiped by a re-install.
 #
 # The saved deployment state lives next to the rendered Compose output (e.g.
 # ~/tpotce/.deepprint_state.json) and is (re)written by every successful
@@ -43,7 +50,10 @@ for arg in "$@"; do
     esac
 done
 
-# --- pick the refresh strategy: git clone, or bootstrap (zip) install --------
+# --- pick the refresh strategy: git clone, bootstrap install next to this
+# --- script, or a bootstrap install at the default root (update.sh fetched
+# --- standalone, e.g. `curl -fsSL .../update.sh | sh`) -----------------------
+DEEPPRINT_ROOT="${DEEPPRINT_HOME:-$HOME/.deepprint}"
 if command -v git >/dev/null 2>&1 \
     && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
     :
@@ -52,8 +62,27 @@ elif [ -f "$SCRIPT_DIR/bootstrap.py" ]; then
         || die "git repository detected but git is not installed; install git or re-run bootstrap.py."
     say "bootstrap install detected; refreshing sources from the release zip."
     exec "$PY" "$SCRIPT_DIR/bootstrap.py" --update "$@"
+elif [ -f "$DEEPPRINT_ROOT/bootstrap.py" ] && [ -d "$DEEPPRINT_ROOT/DeepPrint" ]; then
+    if grep -q -- "--update" "$DEEPPRINT_ROOT/bootstrap.py" 2>/dev/null; then
+        say "bootstrap install detected at $DEEPPRINT_ROOT; refreshing sources from the release zip."
+        exec "$PY" "$DEEPPRINT_ROOT/bootstrap.py" --update "$@"
+    fi
+    # The installed bootstrap predates self-update; fetching the current one
+    # and running it against the existing install preserves saved state and
+    # custom personas (the legacy bootstrap wiped the install on every
+    # re-run, and never installed update.sh).
+    say "legacy install detected at $DEEPPRINT_ROOT; fetching the current updater."
+    BOOTSTRAP_URL="${DEEPPRINT_BOOTSTRAP_URL:-https://raw.githubusercontent.com/sparksbenjamin/DeepPrint/main/bootstrap.py}"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "$BOOTSTRAP_URL" | "$PY" - --update "$@"
+        exit $?
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO- "$BOOTSTRAP_URL" | "$PY" - --update "$@"
+        exit $?
+    fi
+    die "install at $DEEPPRINT_ROOT predates self-update and neither curl nor wget is available; run bootstrap.py from a current checkout instead."
 else
-    die "$SCRIPT_DIR is neither a git clone nor a bootstrap install; re-install DeepPrint via bootstrap.py."
+    die "no DeepPrint install found (looked in $SCRIPT_DIR and $DEEPPRINT_ROOT); re-install DeepPrint via bootstrap.py."
 fi
 
 BRANCH=$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD)
