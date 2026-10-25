@@ -35,6 +35,7 @@ class RuntimePaths:
     output_compose: Path
     output_env: Path
     rendered_assets_dir: Path
+    base_compose_explicit: bool = False
     tpot_root: Path | None = None
 
 
@@ -88,9 +89,6 @@ class DeepPrintEngine:
         )
 
     def render(self, persona_name: str) -> RenderedDeployment:
-        compose_data = self._load_yaml(self.paths.base_compose)
-        self._validate_compose_template(compose_data)
-
         persona_dir, persona_data = self._load_persona(persona_name)
         prompt_values = self._resolve_prompt_values(
             persona_name=persona_name,
@@ -98,6 +96,13 @@ class DeepPrintEngine:
         )
         rendered_persona = render_templates(persona_data, prompt_values)
         self._validate_persona(persona_name, rendered_persona)
+
+        compose_path = self._resolve_base_compose(
+            persona_name=persona_name,
+            rendered_persona=rendered_persona,
+        )
+        compose_data = self._load_yaml(compose_path)
+        self._validate_compose_template(compose_data)
         rendered_compose = deepcopy(compose_data)
 
         services = rendered_compose["services"]
@@ -516,6 +521,29 @@ class DeepPrintEngine:
             )
         return plan
 
+    def _resolve_base_compose(
+        self,
+        persona_name: str,
+        rendered_persona: dict[str, Any],
+    ) -> Path:
+        if self.paths.base_compose_explicit:
+            return self.paths.base_compose
+
+        persona_template = read_optional_text(rendered_persona.get("base_template"))
+        if persona_template is None:
+            return self.paths.base_compose
+
+        candidate = Path(persona_template)
+        if not candidate.is_absolute():
+            candidate = (self.paths.root / persona_template).resolve()
+        if not candidate.exists():
+            raise DeepPrintError(
+                f"Persona '{persona_name}' declares base_template "
+                f"'{persona_template}' but that Compose template was not found "
+                f"at {candidate}."
+            )
+        return candidate
+
     def _load_persona(self, persona_name: str) -> tuple[Path, dict[str, Any]]:
         persona_dir = self.paths.footprints_dir / persona_name
         persona_file = persona_dir / "persona.yaml"
@@ -629,6 +657,14 @@ class DeepPrintEngine:
             raise DeepPrintError(
                 f"Persona '{persona_name}' must define a non-empty string global_prefix."
             )
+
+        base_template = persona_data.get("base_template")
+        if base_template is not None:
+            if not isinstance(base_template, str) or not base_template.strip():
+                raise DeepPrintError(
+                    f"Persona '{persona_name}' must define base_template as a "
+                    f"non-empty string when provided."
+                )
 
         services = persona_data["services"]
         if not isinstance(services, dict) or not services:
@@ -1322,6 +1358,7 @@ def build_runtime_paths(args: argparse.Namespace) -> RuntimePaths:
             else default_output_env
         ),
         rendered_assets_dir=root / ".deepprint_rendered",
+        base_compose_explicit=args.base_compose is not None,
         tpot_root=tpot_root,
     )
 

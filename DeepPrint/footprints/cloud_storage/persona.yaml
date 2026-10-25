@@ -1,0 +1,76 @@
+prompts:
+- id: global_prefix
+  message: Hostname prefix for this cloud estate deployment
+  default: smcloud
+  required: true
+- id: site_name
+  message: Cloud service display name shown on the login page
+  default: Sparks Manor Cloud
+  required: true
+- id: deploy_domain
+  message: Public hostname the decoy will be served under
+  default: cloud.sparksmanor.com
+  required: true
+- id: nextcloud_version
+  message: Nextcloud version to advertise on /status.php
+  default: 30.0.4
+  required: true
+- id: php_version
+  message: PHP version to advertise in X-Powered-By headers
+  default: 8.3.14
+  required: true
+- id: node_version
+  message: Node.js version to leak on the collaboration sidecar
+  default: v20.11.1
+  required: true
+- id: banner_notice
+  message: SSH login banner warning line
+  default: All sessions are monitored and recorded for security purposes.
+  required: true
+- id: operations_contact
+  message: Operations contact shown in decoy text
+  default: SM-CLOUD-OPS
+  required: true
+base_template: templates/tpot-web.yml
+global_prefix: '{{global_prefix}}'
+services:
+  cowrie:
+    hostname: bastion-ssh
+    container_name: cloud-estate-bastion
+    environment_variables:
+      COWRIE_HOSTNAME: SM-BASTION-01
+      COWRIE_MOTD_PATH: /etc/motd
+      DECEPTION_ROLE: cloud-operations
+  conpot:
+    hostname: rack-pdu
+    container_name: cloud-estate-pdu
+    environment_variables:
+      CONPOT_TEMPLATE: default
+      CONPOT_DEVICE_NAME: Rack PDU Management Interface
+      PLC_SITE_NAME: '{{site_name}}'
+      PLC_PROCESS_AREA: Data Hall Row 4
+  suricata:
+    hostname: nsm-sensor
+    container_name: cloud-estate-nsm
+    environment_variables:
+      SURICATA_SENSOR_NAME: SM-NSM-01
+      SENSOR_ROLE: cloud-edge
+  webdecoy:
+    hostname: cloud-web
+    container_name: cloud-estate-web
+    environment_variables:
+      DECOY_SITE_NAME: '{{site_name}}'
+      DECOY_DOMAIN: '{{deploy_domain}}'
+      DECOY_NEXTCLOUD_VERSION: '{{nextcloud_version}}'
+      DECOY_PHP_VERSION: '{{php_version}}'
+      DECOY_NODE_VERSION: '{{node_version}}'
+files_to_inject:
+- service: cowrie
+  source: assets/motd.txt
+  destination: /etc/motd
+- service: conpot
+  source: assets/index.html
+  destination: /usr/lib/python3.11/site-packages/conpot/templates/default/http/htdocs/index.html
+- service: webdecoy
+  source: assets/webapp.py
+  destination: /srv/decoy/webapp.py

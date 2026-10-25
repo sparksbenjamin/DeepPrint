@@ -92,6 +92,12 @@ files_to_inject:
 - `global_prefix`
   Prepended to rendered hostnames. DeepPrint also sanitizes it for RFC 1123
   hostname safety.
+- `base_template`
+  Optional. Path to a Compose template under `DeepPrint/templates/` that
+  this persona should render against instead of the default `tpot.yml`.
+  Use this when a persona needs its own service stack (see the
+  `cloud_storage` persona and `templates/tpot-web.yml`). An explicit
+  `--base-compose` CLI argument always wins over the persona declaration.
 - `services`
   Maps T-Pot service names to persona-specific values.
 - `hostname`
@@ -115,14 +121,20 @@ override.
 ## Supported Services
 
 Your `services` keys must match services present in the base Compose template.
-The bundled template currently includes:
+The bundled templates currently include:
 
 - `cowrie`
 - `conpot`
 - `suricata`
 
-If you expand the template later, you can add matching persona service blocks
-for those services as well.
+`templates/tpot-web.yml` (used by the `cloud_storage` persona via its
+`base_template` declaration) additionally includes:
+
+- `webdecoy` (a Python-based web decoy serving a Nextcloud-style login on
+  port 8081 that fingerprints as both PHP and Node.js)
+
+If you expand the templates later, you can add matching persona service
+blocks for those services as well.
 
 ## Prompted Values
 

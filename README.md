@@ -295,6 +295,14 @@ files_to_inject:
 DeepPrint validates required keys and will fail fast on missing or malformed
 persona data.
 
+Personas can also declare an optional `base_template` key pointing at a
+Compose template under `DeepPrint/templates/` (for example
+`base_template: templates/tpot-web.yml`). When present, that persona renders
+against its own stack instead of the default `templates/tpot.yml`, which is
+how the `cloud_storage` web persona adds a `webdecoy` service without
+affecting the OT/ICS personas. An explicit `--base-compose` CLI argument
+always wins over the persona declaration.
+
 For deception-focused environments where MAC identity matters, personas may
 also define:
 
@@ -309,9 +317,10 @@ For a full step-by-step custom persona guide, see
 
 ## Included Footprints
 
-The repository currently ships with 17 deployable personas:
+The repository currently ships with 18 deployable personas:
 
 - `airport_ops`
+- `cloud_storage`
 - `datacenter_core`
 - `food_processing`
 - `hospital_imaging`

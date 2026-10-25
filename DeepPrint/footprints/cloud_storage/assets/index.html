@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Rack PDU - {{site_name}}</title>
+  <style>
+    body {
+      background: #eef2f4;
+      color: #1b2832;
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .panel {
+      background: #ffffff;
+      border: 1px solid #b9c5cc;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
+      margin: 0 auto;
+      max-width: 720px;
+      padding: 1.5rem 2rem;
+    }
+
+    h1 {
+      border-bottom: 2px solid #5c7687;
+      font-size: 1.6rem;
+      margin: 0 0 1rem;
+      padding-bottom: 0.5rem;
+    }
+
+    table {
+      border-collapse: collapse;
+      margin-top: 1rem;
+      width: 100%;
+    }
+
+    td {
+      border: 1px solid #cfd8dd;
+      padding: 0.55rem 0.75rem;
+    }
+
+    td:first-child {
+      background: #f4f7f8;
+      font-weight: bold;
+      width: 36%;
+    }
+
+    .status-ok {
+      color: #20613b;
+      font-weight: bold;
+    }
+
+    .status-warn {
+      color: #8a6d1a;
+      font-weight: bold;
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <h1>Rack PDU - {{site_name}}</h1>
+    <table>
+      <tr>
+        <td>Device</td>
+        <td>Metered Rack PDU, 30A 208V</td>
+      </tr>
+      <tr>
+        <td>Location</td>
+        <td>{{site_name}} - Data Hall Row 4, Rack E4-22</td>
+      </tr>
+      <tr>
+        <td>Firmware</td>
+        <td>PDU-MGMT 4.2.7</td>
+      </tr>
+      <tr>
+        <td>Input</td>
+        <td>208V / 27.4A / 60Hz</td>
+      </tr>
+      <tr>
+        <td>Load</td>
+        <td>19.8A (66%) - <span class="status-ok">Normal</span></td>
+      </tr>
+      <tr>
+        <td>Temperature</td>
+        <td>24.1C - <span class="status-ok">Normal</span></td>
+      </tr>
+      <tr>
+        <td>Humidity</td>
+        <td>41% - <span class="status-ok">Normal</span></td>
+      </tr>
+      <tr>
+        <td>Outlet Bank 1</td>
+        <td><span class="status-ok">On</span> (8/8 outlets energized)</td>
+      </tr>
+      <tr>
+        <td>Outlet Bank 2</td>
+        <td><span class="status-ok">On</span> (6/8 outlets energized)</td>
+      </tr>
+      <tr>
+        <td>Events</td>
+        <td>1 minor alarm (bank 2 breaker watch) - <span class="status-warn">Review</span></td>
+      </tr>
+      <tr>
+        <td>Contact</td>
+        <td>{{operations_contact}}</td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>

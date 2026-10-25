@@ -13,6 +13,7 @@ python DeepPrint/deepprint.py --deploy <persona_name>
 ## Deployable Templates
 
 - `airport_ops` - airport baggage handling and terminal operations
+- `cloud_storage` - Nextcloud-style file cloud with PHP and Node.js web stack
 - `datacenter_core` - colocation power and network core environment
 - `food_processing` - packaging line and refrigeration controls
 - `hospital_imaging` - radiology and biomedical device network
@@ -26,6 +27,12 @@ python DeepPrint/deepprint.py --deploy <persona_name>
 - `semiconductor_fab` - cleanroom tool support and process utility controls
 - `smart_warehouse` - fulfillment center conveyor and sorter network
 - `telecom_edge` - edge POP power plant and peering segment
-- `utility_substation` - transmission substation relay and breaker controls
 - `university_research` - applied physics lab instrumentation zone
+- `utility_substation` - transmission substation relay and breaker controls
 - `water_treatment` - chlorination and plant SCADA environment
+
+The `cloud_storage` footprint is a web-deception persona: it renders against
+its own base template (`templates/tpot-web.yml`) and adds a `webdecoy`
+service that serves a Nextcloud-style login experience fingerprinting as
+both PHP and Node.js. See `cloud_storage/README.md` for its route table,
+WAF-fronting guidance, and log locations.

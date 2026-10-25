@@ -8,6 +8,8 @@ and staggered startup timing.
 
 Primary use cases
 - Deploy OT / ICS / industrial deception personas on T-Pot
+- Deploy web deception personas (Nextcloud-style file cloud with PHP and
+  Node.js fingerprints) on T-Pot
 - Make a stock T-Pot install look more intentional and less generic
 - Increase attacker friction with coherent service metadata and banners
 - Bootstrap and manage persona swaps from a single Python CLI
@@ -17,10 +19,12 @@ Key files
 - DeepPrint/deepprint.py: main engine and CLI
 - DeepPrint/CUSTOM_PERSONAS.md: how to create custom personas
 - DeepPrint/templates/tpot.yml: bundled base Compose template
+- DeepPrint/templates/tpot-web.yml: web persona base Compose template
 - DeepPrint/footprints/: built-in personas and assets
 
 Important behaviors
 - Uses bundled templates for rendering, even when targeting a live T-Pot root
+- Personas may declare their own base_template to render a custom stack
 - Writes generated files to docker-compose.deepprint.yml and .env.deepprint
 - Backs up the pre-DeepPrint live config before activation
 - Supports dry-run, interactive deploy, and restore workflows

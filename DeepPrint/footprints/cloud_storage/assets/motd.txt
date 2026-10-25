@@ -1,0 +1,8 @@
+****************************************************************
+* {{site_name}} - Management Bastion                             *
+* {{banner_notice}}                                             *
+* Contact {{operations_contact}} for access requests.          *
+****************************************************************
+
+Primary domain: Data Hall Row 4
+NOC queue: {{operations_contact}}

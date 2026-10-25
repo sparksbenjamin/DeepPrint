@@ -236,6 +236,43 @@ class DeepPrintEngineTests(unittest.TestCase):
             self.assertEqual(first_backup_compose, backup_compose.read_text(encoding="utf-8"))
             self.assertEqual(first_backup_env, backup_env.read_text(encoding="utf-8"))
 
+    def test_cloud_storage_persona_renders_with_webdecoy(self) -> None:
+        engine = DeepPrintEngine(build_runtime_paths(make_args()))
+
+        with patch("DeepPrint.deepprint.can_prompt_interactively", return_value=False):
+            deployment = engine.render("cloud_storage")
+
+        services = deployment.compose_data["services"]
+        self.assertIn("webdecoy", services)
+        self.assertEqual("cloud-estate-web", services["webdecoy"]["container_name"])
+        self.assertEqual("python:3.12-alpine", services["webdecoy"]["image"])
+        self.assertEqual(
+            "Sparks Manor Cloud",
+            services["webdecoy"]["environment"]["DECOY_SITE_NAME"],
+        )
+        injected_services = {injection.service for injection in deployment.injections}
+        self.assertIn("webdecoy", injected_services)
+        webdecoy_injection = next(
+            injection
+            for injection in deployment.injections
+            if injection.service == "webdecoy"
+        )
+        self.assertEqual("/srv/decoy/webapp.py", webdecoy_injection.destination)
+        self.assertIsNotNone(webdecoy_injection.rendered_text)
+
+    def test_explicit_base_compose_overrides_persona_base_template(self) -> None:
+        engine = DeepPrintEngine(
+            build_runtime_paths(
+                make_args(
+                    base_compose=PROJECT_ROOT / "DeepPrint" / "templates" / "tpot.yml",
+                )
+            )
+        )
+
+        with patch("DeepPrint.deepprint.can_prompt_interactively", return_value=False):
+            with self.assertRaisesRegex(DeepPrintError, "webdecoy"):
+                engine.render("cloud_storage")
+
     def test_generate_mac_address_from_prefix_randomizes_suffix(self) -> None:
         with patch(
             "DeepPrint.deepprint.random.randint",
