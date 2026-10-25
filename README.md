@@ -90,6 +90,7 @@ DeepPrint/
 |   |-- footprints/
 |   `-- templates/
 |-- bootstrap.py
+|-- update.sh
 `-- README.md
 ```
 
@@ -190,6 +191,33 @@ Restore the previous live T-Pot configuration from DeepPrint backup files:
 
 ```bash
 python3 DeepPrint/deepprint.py --restore --tpot-root ~/tpotce
+```
+
+## Updating an Existing Deployment
+
+Every successful `--deploy` records its persona and prompt answers next to the
+rendered output (`.deepprint_state.json` in the T-Pot root), so a deployment can
+be re-applied without re-answering prompts. To refresh the repository —
+personas, base Compose templates, the engine, and `update.sh` itself — and then
+re-apply your saved deployment with the new code:
+
+```bash
+./update.sh
+```
+
+Useful variants:
+
+```bash
+./update.sh --dry-run   # pull updates, then preview the re-render only
+./update.sh --force     # re-apply even if the repository was already current
+```
+
+`update.sh` is fast-forward only: local modifications to the repository abort
+the run instead of being merged. If you ever need to apply the saved
+deployment without touching git, run the engine directly:
+
+```bash
+python3 DeepPrint/deepprint.py --update --tpot-root ~/tpotce
 ```
 
 ## Live T-Pot Behavior

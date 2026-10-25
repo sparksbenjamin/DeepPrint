@@ -30,6 +30,7 @@ def make_args(**overrides: object) -> Namespace:
         "deploy": None,
         "list_personas": False,
         "restore": False,
+        "update": False,
         "interactive": False,
         "dry_run": False,
         "tpot_root": None,
@@ -259,6 +260,195 @@ class DeepPrintEngineTests(unittest.TestCase):
         )
         self.assertEqual("/srv/decoy/webapp.py", webdecoy_injection.destination)
         self.assertIsNotNone(webdecoy_injection.rendered_text)
+
+    def _stash_repo_pointer(self) -> None:
+        """Isolate the repo-root state pointer from real deployments.
+
+        ``write_state`` records the pointer inside the package directory, so
+        tests that exercise it must not see (or leak) a pointer belonging to
+        an actual deployment on this machine.
+        """
+        pointer_file = PROJECT_ROOT / "DeepPrint" / ".deepprint_state_pointer.json"
+        original = (
+            pointer_file.read_text(encoding="utf-8")
+            if pointer_file.exists()
+            else None
+        )
+
+        def restore() -> None:
+            if original is None:
+                pointer_file.unlink(missing_ok=True)
+            else:
+                pointer_file.write_text(original, encoding="utf-8")
+
+        self.addCleanup(restore)
+        pointer_file.unlink(missing_ok=True)
+
+    def _deploy_cloud_storage_fake_docker(
+        self, tpot_root: Path, answers: dict[str, str] | None = None
+    ):
+        shutil.copy2(
+            PROJECT_ROOT / "DeepPrint" / "templates" / "tpot.yml",
+            tpot_root / "docker-compose.yml",
+        )
+        shutil.copy2(
+            PROJECT_ROOT / "DeepPrint" / "templates" / ".env",
+            tpot_root / ".env",
+        )
+        engine = DeepPrintEngine(build_runtime_paths(make_args(tpot_root=tpot_root)))
+        engine._run_docker = lambda compose_args: None
+        engine._run_command = lambda command, error_context: None
+        with patch("DeepPrint.deepprint.can_prompt_interactively", return_value=False):
+            deployment = engine.render("cloud_storage", answers=answers)
+        with patch("DeepPrint.deepprint.time.sleep"), patch(
+            "DeepPrint.deepprint.random.uniform", return_value=1.5
+        ):
+            engine.deploy(deployment)
+        engine.write_state(deployment)
+        return engine, deployment
+
+    def test_deploy_records_state_and_update_replays_answers(self) -> None:
+        self._stash_repo_pointer()
+        with tempfile.TemporaryDirectory(prefix="deepprint-state-") as temp_dir:
+            tpot_root = Path(temp_dir)
+            answers = {
+                "site_name": "Replay Cloud",
+                "deploy_domain": "replay.example.test",
+            }
+            engine, deployment = self._deploy_cloud_storage_fake_docker(
+                tpot_root, answers=answers
+            )
+
+            state_file = tpot_root / ".deepprint_state.json"
+            self.assertTrue(state_file.exists())
+            self.assertTrue(deployment.prompt_values["site_name"] == "Replay Cloud")
+
+            located_path, state = engine.find_state()
+            self.assertEqual(state_file, located_path)
+            self.assertEqual("cloud_storage", state["persona"])
+            self.assertEqual("Replay Cloud", state["prompt_values"]["site_name"])
+            self.assertEqual(
+                "replay.example.test", state["prompt_values"]["deploy_domain"]
+            )
+            self.assertEqual(str(tpot_root), state["flags"]["tpot_root"])
+            self.assertIsNone(state["flags"]["base_compose"])
+
+            # A fresh engine (as update.sh would build one) must locate the
+            # deployment through the repo-root pointer written by write_state.
+            pointer_file = PROJECT_ROOT / "DeepPrint" / ".deepprint_state_pointer.json"
+            self.assertTrue(pointer_file.exists())
+            repo_engine = DeepPrintEngine(build_runtime_paths(make_args()))
+            pointed_path, pointed_state = repo_engine.find_state()
+            self.assertEqual(state_file, pointed_path)
+            self.assertEqual("Replay Cloud", pointed_state["prompt_values"]["site_name"])
+
+            # Replay must reproduce the deployed answers verbatim, not the
+            # persona defaults.
+            with patch(
+                "DeepPrint.deepprint.can_prompt_interactively", return_value=False
+            ):
+                replayed = repo_engine.render(
+                    "cloud_storage", answers=pointed_state["prompt_values"]
+                )
+            webdecoy_env = replayed.compose_data["services"]["webdecoy"]["environment"]
+            self.assertEqual("Replay Cloud", webdecoy_env["DECOY_SITE_NAME"])
+            self.assertEqual(
+                "replay.example.test", webdecoy_env["DECOY_DOMAIN"]
+            )
+
+    def test_update_replay_never_prompts(self) -> None:
+        self._stash_repo_pointer()
+        with tempfile.TemporaryDirectory(prefix="deepprint-noprompt-") as temp_dir:
+            tpot_root = Path(temp_dir)
+            _, deployment = self._deploy_cloud_storage_fake_docker(tpot_root)
+            saved = dict(deployment.prompt_values)
+            saved["site_name"] = "Silent Replay"
+
+            engine = DeepPrintEngine(build_runtime_paths(make_args()))
+            # Even on an interactive TTY, a replay must never prompt.
+            with patch(
+                "DeepPrint.deepprint.can_prompt_interactively", return_value=True
+            ), patch("builtins.input", side_effect=AssertionError("prompted")):
+                replayed = engine.render("cloud_storage", answers=saved)
+            self.assertEqual(
+                "Silent Replay",
+                replayed.compose_data["services"]["webdecoy"]["environment"][
+                    "DECOY_SITE_NAME"
+                ],
+            )
+
+    def test_update_without_state_reports_missing_deployment(self) -> None:
+        self._stash_repo_pointer()
+        with tempfile.TemporaryDirectory(prefix="deepprint-nostate-") as temp_dir:
+            # No deployment here and no repo-root pointer: --update must
+            # fail with actionable guidance instead of a traceback.
+            engine = DeepPrintEngine(
+                build_runtime_paths(make_args(tpot_root=Path(temp_dir)))
+            )
+            with self.assertRaises(DeepPrintError) as raised:
+                engine.find_state()
+            self.assertIn("No previous DeepPrint deployment", str(raised.exception))
+
+    def test_update_rejects_corrupt_state_file(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="deepprint-badstate-") as temp_dir:
+            tpot_root = Path(temp_dir)
+            (tpot_root / ".deepprint_state.json").write_text(
+                "{not json", encoding="utf-8"
+            )
+            engine = DeepPrintEngine(
+                build_runtime_paths(make_args(tpot_root=tpot_root))
+            )
+            with self.assertRaises(DeepPrintError) as raised:
+                engine.find_state()
+            self.assertIn("could not be read", str(raised.exception))
+
+            (tpot_root / ".deepprint_state.json").write_text(
+                '{"version": 99, "persona": "cloud_storage"}', encoding="utf-8"
+            )
+            with self.assertRaises(DeepPrintError) as raised:
+                engine.find_state()
+            self.assertIn("unknown or missing version", str(raised.exception))
+
+    def test_full_update_flow_reapplies_saved_deployment(self) -> None:
+        self._stash_repo_pointer()
+        with tempfile.TemporaryDirectory(prefix="deepprint-updateflow-") as temp_dir:
+            tpot_root = Path(temp_dir)
+            engine, deployment = self._deploy_cloud_storage_fake_docker(tpot_root)
+            self.assertTrue((tpot_root / "docker-compose.deepprint.yml").exists())
+
+            # Simulate the engine side of `update.sh`: fresh engine, no
+            # --tpot-root, state located via the pointer, deploy faked.
+            _, state = DeepPrintEngine(build_runtime_paths(make_args())).find_state()
+
+            replay_args = make_args(
+                deploy=str(state["persona"]), tpot_root=Path(state["flags"]["tpot_root"])
+            )
+            if state["flags"].get("base_compose"):
+                replay_args.base_compose = Path(state["flags"]["base_compose"])
+            replay_engine = DeepPrintEngine(build_runtime_paths(replay_args))
+
+            up_calls: list[list[str]] = []
+            replay_engine._run_docker = lambda compose_args: up_calls.append(compose_args)
+            replay_engine._run_command = lambda command, error_context: None
+
+            with patch("DeepPrint.deepprint.can_prompt_interactively", return_value=False):
+                replayed = replay_engine.render(
+                    str(state["persona"]), answers=state["prompt_values"]
+                )
+            with patch("DeepPrint.deepprint.time.sleep"), patch(
+                "DeepPrint.deepprint.random.uniform", return_value=1.5
+            ):
+                replay_engine.deploy(replayed)
+            replay_engine.write_state(replayed)
+
+            # The webdecoy service is part of the redeployed stack.
+            self.assertTrue(
+                any("webdecoy" in call for call in up_calls),
+                up_calls,
+            )
+            # State survives the update and still records the persona.
+            state_file = Path(state["flags"]["tpot_root"]) / ".deepprint_state.json"
+            self.assertTrue(state_file.exists())
 
     def test_explicit_base_compose_overrides_persona_base_template(self) -> None:
         engine = DeepPrintEngine(

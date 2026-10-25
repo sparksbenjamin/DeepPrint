@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import random
 import re
@@ -9,7 +10,8 @@ import subprocess
 import sys
 import time
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -55,6 +57,7 @@ class RenderedDeployment:
     env_values: dict[str, str]
     injections: list[FileInjection]
     project_name: str
+    prompt_values: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,11 @@ class PromptSpec:
     message: str
     default: str | None
     required: bool
+
+
+STATE_FILENAME = ".deepprint_state.json"
+STATE_POINTER_FILENAME = ".deepprint_state_pointer.json"
+STATE_VERSION = 1
 
 
 PLACEHOLDER_PATTERN = re.compile(r"{{\s*([a-zA-Z0-9_]+)\s*}}")
@@ -88,11 +96,16 @@ class DeepPrintEngine:
             compose_file=self.paths.output_compose,
         )
 
-    def render(self, persona_name: str) -> RenderedDeployment:
+    def render(
+        self,
+        persona_name: str,
+        answers: dict[str, str] | None = None,
+    ) -> RenderedDeployment:
         persona_dir, persona_data = self._load_persona(persona_name)
         prompt_values = self._resolve_prompt_values(
             persona_name=persona_name,
             prompt_data=persona_data.get("prompts", []),
+            saved_answers=answers,
         )
         rendered_persona = render_templates(persona_data, prompt_values)
         self._validate_persona(persona_name, rendered_persona)
@@ -168,6 +181,7 @@ class DeepPrintEngine:
             env_values=generated_env,
             injections=injections,
             project_name=generated_env["COMPOSE_PROJECT_NAME"],
+            prompt_values=prompt_values,
         )
 
     def write_artifacts(self, deployment: RenderedDeployment) -> None:
@@ -561,6 +575,7 @@ class DeepPrintEngine:
         self,
         persona_name: str,
         prompt_data: Any,
+        saved_answers: dict[str, str] | None = None,
     ) -> dict[str, str]:
         prompt_specs = self._validate_prompt_specs(persona_name, prompt_data)
         values: dict[str, str] = {"persona_name": persona_name}
@@ -577,17 +592,22 @@ class DeepPrintEngine:
                 else None
             )
 
-            answer = rendered_default or ""
-            if can_prompt_interactively():
-                answer = self._prompt_user(
-                    message=rendered_message,
-                    default=rendered_default,
-                )
-            elif prompt_spec.required and not answer:
-                raise DeepPrintError(
-                    f"Prompt '{prompt_spec.id}' in persona '{persona_name}' requires "
-                    "interactive input because it has no default value."
-                )
+            if saved_answers is not None and prompt_spec.id in saved_answers:
+                # Replaying a saved deployment (update path): never prompt;
+                # recorded answers win over persona defaults.
+                answer = str(saved_answers[prompt_spec.id])
+            else:
+                answer = rendered_default or ""
+                if can_prompt_interactively():
+                    answer = self._prompt_user(
+                        message=rendered_message,
+                        default=rendered_default,
+                    )
+                elif prompt_spec.required and not answer:
+                    raise DeepPrintError(
+                        f"Prompt '{prompt_spec.id}' in persona '{persona_name}' requires "
+                        "interactive input because it has no default value."
+                    )
 
             if prompt_spec.required and not answer.strip():
                 raise DeepPrintError(
@@ -618,6 +638,131 @@ class DeepPrintEngine:
             if entry.is_dir() and (entry / "persona.yaml").exists():
                 personas.append(entry.name)
         return personas
+
+    def state_path(self) -> Path:
+        return self.paths.output_compose.parent / STATE_FILENAME
+
+    def find_state(self) -> tuple[Path, dict[str, Any]]:
+        """Locate and read the most recent deployment state.
+
+        The state file lives next to the rendered Compose output, so it
+        survives repository updates and re-clones. Deployment flags recorded
+        inside it are replayed by the ``--update`` path.
+        """
+        candidates: list[Path] = []
+        if self.paths.tpot_root is not None:
+            candidates.append(self.paths.tpot_root / STATE_FILENAME)
+        pointed = self._pointer_target()
+        if pointed is not None and pointed not in candidates:
+            candidates.append(pointed)
+        candidates.append(self.state_path())
+        cwd_state = Path.cwd() / STATE_FILENAME
+        if cwd_state not in candidates:
+            candidates.append(cwd_state)
+
+        for path in candidates:
+            if path.exists():
+                return path, self._read_state(path)
+        raise DeepPrintError(
+            "No previous DeepPrint deployment was found. Run a fresh "
+            "deployment with --deploy first; --update re-applies the most "
+            "recent deployment from saved state."
+        )
+
+    def _pointer_target(self) -> Path | None:
+        """Return the state path recorded by the repo-root pointer, if any.
+
+        ``update.sh`` runs from the repository checkout, while the state file
+        lives next to the rendered output (often outside the repo). The
+        pointer bridges that gap so a plain ``--update`` still finds the
+        deployment.
+        """
+        pointer_path = self.paths.root / STATE_POINTER_FILENAME
+        if not pointer_path.exists():
+            return None
+        try:
+            pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+        if not isinstance(pointer, dict):
+            return None
+        target = pointer.get("state")
+        if not isinstance(target, str) or not target:
+            return None
+        return Path(target)
+
+    def _read_state(self, path: Path) -> dict[str, Any]:
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DeepPrintError(
+                f"The DeepPrint state file at {path} could not be read ({exc}). "
+                "Delete it and re-run --deploy to record a new deployment."
+            ) from exc
+        if not isinstance(state, dict) or state.get("version") != STATE_VERSION:
+            raise DeepPrintError(
+                f"The DeepPrint state file at {path} has an unknown or missing "
+                "version. Delete it and re-run --deploy to record a new deployment."
+            )
+        if not isinstance(state.get("persona"), str) or not state["persona"]:
+            raise DeepPrintError(
+                f"The DeepPrint state file at {path} does not record a persona. "
+                "Delete it and re-run --deploy to record a new deployment."
+            )
+        return state
+
+    def write_state(self, deployment: RenderedDeployment) -> None:
+        """Record the deployed persona, its answers, and effective flags so a
+        later ``--update`` (or ``update.sh``) can replay the deployment after
+        the repository has been refreshed."""
+        state = {
+            "version": STATE_VERSION,
+            "persona": deployment.persona_name,
+            "prompt_values": dict(deployment.prompt_values),
+            "flags": {
+                "tpot_root": (
+                    str(self.paths.tpot_root) if self.paths.tpot_root is not None else None
+                ),
+                # Only record an explicit --base-compose override; when the
+                # persona's base_template was used, store None so a future
+                # update re-resolves (possibly changed) persona templates.
+                "base_compose": (
+                    str(self.paths.base_compose) if self.paths.base_compose_explicit else None
+                ),
+                "base_env": str(self.paths.base_env),
+                "output_compose": str(self.paths.output_compose),
+                "output_env": str(self.paths.output_env),
+            },
+            "saved_at": datetime.now(timezone.utc).isoformat(),
+        }
+        state_path = self.state_path()
+        state_path.write_text(
+            json.dumps(state, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+
+        # Keep the repo-root pointer in sync: it tells a repo-side
+        # ``--update`` / ``update.sh`` where the (out-of-repo) state lives.
+        pointer_path = self.paths.root / STATE_POINTER_FILENAME
+        try:
+            pointer_path.relative_to(state_path.parent)
+        except ValueError:
+            pointer_path.write_text(
+                json.dumps(
+                    {"version": STATE_VERSION, "state": str(state_path)},
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        else:
+            # The state lives inside the repo tree; a pointer would be
+            # redundant — remove a stale one from an earlier layout.
+            try:
+                pointer_path.unlink()
+            except FileNotFoundError:
+                pass
 
     @staticmethod
     def _load_yaml(path: Path) -> dict[str, Any]:
@@ -1284,6 +1429,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="Restore docker-compose.yml and .env from DeepPrint backup files.",
     )
     parser.add_argument(
+        "--update",
+        action="store_true",
+        help=(
+            "Re-apply the most recently deployed persona using the answers and "
+            "flags saved from that deployment."
+        ),
+    )
+    parser.add_argument(
         "--interactive",
         action="store_true",
         help="Launch an interactive deployment wizard.",
@@ -1366,9 +1519,21 @@ def build_runtime_paths(args: argparse.Namespace) -> RuntimePaths:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
+    if args.update and (
+        args.deploy or args.restore or args.interactive or args.list_personas
+    ):
+        parser.error(
+            "--update cannot be combined with --deploy, --restore, --interactive, "
+            "or --list-personas"
+        )
     interactive_mode = not args.list_personas and (
-        args.interactive or (
-            not args.deploy and not args.restore and not args.list_personas and sys.stdin.isatty()
+        args.interactive
+        or (
+            not args.deploy
+            and not args.restore
+            and not args.update
+            and not args.list_personas
+            and sys.stdin.isatty()
         )
     )
 
@@ -1385,6 +1550,53 @@ def main() -> int:
                 return 0
             for persona in personas:
                 print(persona)
+            return 0
+
+        if args.update:
+            state_path, state = engine.find_state()
+            saved_flags = state.get("flags")
+            if not isinstance(saved_flags, dict):
+                saved_flags = {}
+
+            # Replay the recorded deployment: same persona, same answers,
+            # same effective flags — but re-resolved against the current
+            # repository contents (updated personas and base templates).
+            replay_args = argparse.Namespace(**vars(args))
+            replay_args.deploy = str(state["persona"])
+            if replay_args.tpot_root is None and saved_flags.get("tpot_root"):
+                replay_args.tpot_root = Path(str(saved_flags["tpot_root"]))
+            if replay_args.base_compose is None and saved_flags.get("base_compose"):
+                replay_args.base_compose = Path(str(saved_flags["base_compose"]))
+            if replay_args.base_env is None and saved_flags.get("base_env"):
+                replay_args.base_env = Path(str(saved_flags["base_env"]))
+            if replay_args.output_compose is None and saved_flags.get("output_compose"):
+                replay_args.output_compose = Path(str(saved_flags["output_compose"]))
+            if replay_args.output_env is None and saved_flags.get("output_env"):
+                replay_args.output_env = Path(str(saved_flags["output_env"]))
+
+            engine = DeepPrintEngine(build_runtime_paths(replay_args))
+            saved_answers = state.get("prompt_values")
+            if not isinstance(saved_answers, dict):
+                saved_answers = {}
+            try:
+                deployment = engine.render(str(state["persona"]), answers=saved_answers)
+            except DeepPrintError as exc:
+                raise DeepPrintError(
+                    f"{exc} The saved deployment answers predate this persona "
+                    "revision; re-run with --deploy to answer the updated prompts, "
+                    "after which --update will remember the new answers."
+                ) from exc
+
+            if args.dry_run:
+                print(deployment.compose_text)
+                return 0
+
+            engine.deploy(deployment)
+            engine.write_state(deployment)
+            print(
+                f"DeepPrint updated persona '{deployment.persona_name}' from "
+                f"{state_path} using {engine.paths.output_compose}."
+            )
             return 0
 
         if args.restore:
@@ -1411,7 +1623,8 @@ def main() -> int:
 
         if not args.deploy:
             parser.error(
-                "one of the arguments --deploy, --restore, or --list-personas is required"
+                "one of the arguments --deploy, --restore, --update, or "
+                "--list-personas is required"
             )
 
         deployment = engine.render(args.deploy)
@@ -1438,6 +1651,7 @@ def main() -> int:
                 return 0
 
         engine.deploy(deployment)
+        engine.write_state(deployment)
         print(
             f"DeepPrint deployed persona '{deployment.persona_name}' using "
             f"{engine.paths.output_compose}."

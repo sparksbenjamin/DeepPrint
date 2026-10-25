@@ -5,6 +5,10 @@ __pycache__/
 DeepPrint/.deepprint_rendered/
 DeepPrint/.env.deepprint
 DeepPrint/tpot_deepprint.yml
+DeepPrint/.deepprint_state.json
+.deepprint_state.json
+DeepPrint/.deepprint_state_pointer.json
+.deepprint_state_pointer.json
 
 *.deepprint.bak
 *.deepprint.yml
