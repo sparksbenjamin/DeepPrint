@@ -1,16 +1,22 @@
 #!/bin/sh
 # DeepPrint self-update.
 #
-# Refreshes the repository (personas, base Compose templates, engine, and this
-# script itself) from its git origin, then re-applies the most recently
-# deployed persona using the answers saved at deploy time. A normal run:
+# Refreshes the sources (personas, base Compose templates, engine, and this
+# script itself), then re-applies the most recently deployed persona using
+# the answers saved at deploy time. A normal run:
 #
-#   ./update.sh
+#   ./update.sh                        # inside a git clone of DeepPrint
+#   sh ~/.deepprint/update.sh          # inside a bootstrap (zip) install
 #
 # Useful variants:
 #   ./update.sh --dry-run   # pull updates, then preview the re-render only
 #   ./update.sh --force      # re-apply the deployment even if nothing was pulled
 #   DEEPPRINT_PYTHON=python3.11 ./update.sh
+#
+# Git clones update with a fast-forward-only pull; local modifications abort
+# the run. Bootstrap installs (curl ... | python3 -) have no git history, so
+# they download the latest release zip and swap it in place, preserving the
+# saved deployment state and any custom personas.
 #
 # The saved deployment state lives next to the rendered Compose output (e.g.
 # ~/tpotce/.deepprint_state.json) and is (re)written by every successful
@@ -37,10 +43,18 @@ for arg in "$@"; do
     esac
 done
 
-command -v git >/dev/null 2>&1 || die "git not found; re-clone DeepPrint instead of updating."
-
-git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1 \
-    || die "$SCRIPT_DIR is not a git clone; re-clone and re-deploy with --deploy."
+# --- pick the refresh strategy: git clone, or bootstrap (zip) install --------
+if command -v git >/dev/null 2>&1 \
+    && git -C "$SCRIPT_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    :
+elif [ -f "$SCRIPT_DIR/bootstrap.py" ]; then
+    [ ! -d "$SCRIPT_DIR/.git" ] \
+        || die "git repository detected but git is not installed; install git or re-run bootstrap.py."
+    say "bootstrap install detected; refreshing sources from the release zip."
+    exec "$PY" "$SCRIPT_DIR/bootstrap.py" --update "$@"
+else
+    die "$SCRIPT_DIR is neither a git clone nor a bootstrap install; re-install DeepPrint via bootstrap.py."
+fi
 
 BRANCH=$(git -C "$SCRIPT_DIR" rev-parse --abbrev-ref HEAD)
 [ "$BRANCH" != "HEAD" ] || die "detached HEAD checkout; run: git -C '$SCRIPT_DIR' checkout main"

@@ -30,6 +30,8 @@ Important behaviors
 - Supports dry-run, interactive deploy, and restore workflows
 - Persists deploy answers to .deepprint_state.json next to the output
 - Re-applies saved deployments via --update or update.sh without re-prompting
+- bootstrap.py --update refreshes zip installs in place, preserving state and custom personas
+- update.sh detects git clones vs bootstrap installs and delegates accordingly
 - Uses subprocess for Docker and docker cp orchestration
 
 Search terms

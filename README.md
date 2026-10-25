@@ -205,6 +205,22 @@ re-apply your saved deployment with the new code:
 ./update.sh
 ```
 
+The same command works in a bootstrap (zip) install, where there is no git
+history:
+
+```bash
+sh ~/.deepprint/update.sh
+```
+
+In that case the sources are refreshed from the latest release zip and swapped
+in place, preserving the saved deployment state and any custom personas you
+added under `DeepPrint/footprints/`. Equivalently, the bootstrap script can
+update itself directly:
+
+```bash
+python3 ~/.deepprint/bootstrap.py --update
+```
+
 Useful variants:
 
 ```bash
